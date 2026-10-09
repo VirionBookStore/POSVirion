@@ -1482,8 +1482,7 @@
           document.getElementById("userRole").innerText = currentUser.role;
           document.getElementById("userAvatar").src = currentUser.foto;
           
-          var cabangLabel = currentUser.nama_cabang ? " (" + currentUser.nama_cabang + ")" : "";
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + currentUser.nama + cabangLabel;
+          document.getElementById("cashierNameDisplay").innerText = getCashierIdentityLabel(currentUser);
           
           if(!applyRolePermissions()) return;
           initApp();
@@ -1574,9 +1573,7 @@
           document.getElementById("userRole").innerText = res.user.role;
           document.getElementById("userAvatar").src = res.user.foto;
           
-          // Tambahkan informasi cabang pada tampilan header jika diinginkan
-          var cabangLabel = res.user.nama_cabang ? " (" + res.user.nama_cabang + ")" : "";
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + res.user.nama + cabangLabel;
+          document.getElementById("cashierNameDisplay").innerText = getCashierIdentityLabel(res.user);
           
           if(!applyRolePermissions()) return;
           initApp();
@@ -1586,6 +1583,17 @@
           btn.disabled = false;
         }
       }).prosesLogin(email, password);
+    }
+
+    // Identitas cabang selalu ditampilkan bersama kasir agar cabang aktif mudah dibedakan.
+    function getCashierIdentityLabel(user) {
+      user = user || currentUser || {};
+      var nama = String(user.nama || 'Admin').trim();
+      var idCabang = String(user.id_cabang || '').trim();
+      var namaCabang = String(user.nama_cabang || '').trim();
+      var idLabel = idCabang ? ' · ' + idCabang : '';
+      var namaLabel = namaCabang && namaCabang !== 'Cabang Utama' ? ' (' + namaCabang + ')' : '';
+      return 'Kasir: ' + nama + idLabel + namaLabel;
     }
 
     function logoutUser() {
@@ -2550,6 +2558,8 @@ function simpanEditItemModal() {
          metode: metode,
          items: itemsToSave,
          kasir: currentUser ? currentUser.nama : 'Admin',
+         id_cabang: currentUser ? String(currentUser.id_cabang || '').trim() : '',
+         nama_cabang: currentUser ? String(currentUser.nama_cabang || '').trim() : '',
          tanggal: new Date().toLocaleString("id-ID")
       };
 
@@ -2559,8 +2569,11 @@ function simpanEditItemModal() {
         total_bayar: grandFinalBayar,
         metode_pembayaran: metode,
         kasir: lastTransaksi.kasir,
-        id_cabang: currentUser ? currentUser.id_cabang : '', // <-- Tambahkan baris ini
-        nama_cabang: currentUser ? currentUser.nama_cabang : '', // <-- Tambahkan baris ini
+        // Simpan identitas cabang ke antrean offline agar tetap melekat saat sinkronisasi.
+        id_cabang: currentUser ? String(currentUser.id_cabang || '').trim() : '',
+        nama_cabang: currentUser ? String(currentUser.nama_cabang || '').trim() : '',
+        email_kasir: currentUser ? String(currentUser.email || '').trim().toLowerCase() : '',
+        role_kasir: currentUser ? String(currentUser.role || '').trim().toUpperCase() : '',
         items: itemsToSave 
       };
 
@@ -2589,7 +2602,11 @@ function simpanEditItemModal() {
        lastTransaksi = data;
        document.getElementById("strukTanggal").innerText = data.tanggal;
        document.getElementById("strukNoNota").innerText = data.no_nota;
-       document.getElementById("strukKasir").innerText = "Kasir: " + (data.kasir || 'Admin');
+       document.getElementById("strukKasir").innerText = getCashierIdentityLabel({
+         nama: data.kasir || 'Admin',
+         id_cabang: data.id_cabang || (currentUser && currentUser.id_cabang) || '',
+         nama_cabang: data.nama_cabang || (currentUser && currentUser.nama_cabang) || ''
+       });
        
        let itemHtml = "";
        let subKotor = 0;
