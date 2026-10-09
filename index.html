@@ -1590,9 +1590,10 @@
     function getCashierIdentityLabel(user) {
       user = user || currentUser || {};
       var nama = String(user.nama || 'Admin').trim();
-      var idCabang = String(user.id_cabang || '').trim();
-      var namaCabang = String(user.nama_cabang || '').trim();
-      var role = String(user.role || '').trim().toUpperCase();
+      var idCabang = String(user.id_cabang || user.idCabang || user.cabang_id || '').trim();
+      // Kompatibel dengan variasi nama properti yang mungkin dikirim backend lama.
+      var namaCabang = String(user.nama_cabang || user.namaCabang || user.cabang_nama || user.namaCabangAktif || '').trim();
+      var role = String(user.role || user.peran || '').trim().toUpperCase();
       var isOwnerAllBranches = role === 'OWNER' && !idCabang;
       var idLabel = idCabang
         ? ' · ' + idCabang
@@ -4890,7 +4891,8 @@ function prosesCheckoutReturFinal() {
           // 1) Master barang diambil per 1000 record agar aman untuk data besar.
           if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil jumlah master barang dari Google Sheets...</b>';
           const totalBarang = Number(await gasCall('getBarangTotalCount', [])) || 0;
-          await clearStore('masterBarang');
+          // Jangan hapus cache lama sebelum respons batch pertama valid diterima.
+          let masterStoreCleared = false;
 
           let receivedBarang = 0;
           let receivedUniqueBarang = 0;
@@ -4943,6 +4945,10 @@ function prosesCheckoutReturFinal() {
             if (!batch.length && offset < totalBarang) {
               throw new Error('Batch Master Barang kosong pada posisi '+offset+' padahal total sumber '+totalBarang+'. Pastikan versi Web App GAS yang berisi getBarangBatch sudah di-deploy ulang.');
             }
+            if (!masterStoreCleared) {
+              await clearStore('masterBarang');
+              masterStoreCleared = true;
+            }
 
             const validBatch = [];
             batch.forEach(function(item) {
@@ -4971,16 +4977,20 @@ function prosesCheckoutReturFinal() {
               (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
           }
 
-          // 2) Data lain tetap satu kali panggil karena ukurannya jauh lebih kecil.
-          for (let i=0; i<normalTasks.length; i++) {
-            const storeName = normalTasks[i][0];
-            const fnName = normalTasks[i][1];
-            if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron '+storeLabels[storeName]+'...</b>';
-            const data = await gasCall(fnName, []);
-            if (!Array.isArray(data)) throw new Error(storeLabels[storeName]+' dari GAS bukan array.');
-            const result = await replaceStore(storeName, data);
+          // 2) Ambil endpoint baca secara paralel untuk mengurangi waktu tunggu jaringan.
+          // Penulisan IndexedDB tetap berurutan per store agar mudah diverifikasi.
+          if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil data transaksi, stok, supplier, dan promo...</b>';
+          const fetchedTasks = await Promise.all(normalTasks.map(async function(task) {
+            const data = await gasCall(task[1], []);
+            if (!Array.isArray(data)) throw new Error(storeLabels[task[0]]+' dari GAS bukan array.');
+            return { storeName: task[0], data: data };
+          }));
+          for (let i=0; i<fetchedTasks.length; i++) {
+            const storeName = fetchedTasks[i].storeName;
+            if (txt) txt.innerHTML = '<b style="color:#087f8c;">Menyimpan '+storeLabels[storeName]+'...</b>';
+            const result = await replaceStore(storeName, fetchedTasks[i].data);
             if (result.skipped) throw new Error(storeLabels[storeName]+': '+result.skipped+' record tidak memiliki key yang valid.');
-            const pct = 70 + Math.round((i+1) / normalTasks.length * 25);
+            const pct = 70 + Math.round((i+1) / fetchedTasks.length * 25);
             if (btn) btn.innerText = '⏳ '+Math.min(95,pct)+'%';
           }
 
