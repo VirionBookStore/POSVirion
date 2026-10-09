@@ -1481,7 +1481,10 @@
           document.getElementById("userName").innerText = currentUser.nama;
           document.getElementById("userRole").innerText = currentUser.role;
           document.getElementById("userAvatar").src = currentUser.foto;
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + currentUser.nama;
+          
+          var cabangLabel = currentUser.nama_cabang ? " (" + currentUser.nama_cabang + ")" : "";
+          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + currentUser.nama + cabangLabel;
+          
           if(!applyRolePermissions()) return;
           initApp();
         } catch (e) {
@@ -1563,14 +1566,18 @@
 
       google.script.run.withSuccessHandler(function(res) {
         if (res.status === "success") {
-          currentUser = res.user;
+          currentUser = res.user; // res.user sudah membawa id_cabang & nama_cabang dari GAS
           localStorage.setItem("as_pos_current_user", JSON.stringify(currentUser));
           document.getElementById("loginWrapper").style.display = "none";
           document.getElementById("appWrapper").style.display = "flex";
           document.getElementById("userName").innerText = res.user.nama;
           document.getElementById("userRole").innerText = res.user.role;
           document.getElementById("userAvatar").src = res.user.foto;
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + res.user.nama;
+          
+          // Tambahkan informasi cabang pada tampilan header jika diinginkan
+          var cabangLabel = res.user.nama_cabang ? " (" + res.user.nama_cabang + ")" : "";
+          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + res.user.nama + cabangLabel;
+          
           if(!applyRolePermissions()) return;
           initApp();
         } else {
@@ -2552,7 +2559,9 @@ function simpanEditItemModal() {
         total_bayar: grandFinalBayar,
         metode_pembayaran: metode,
         kasir: lastTransaksi.kasir,
-        items: itemsToSave // Kirim item yang sudah dikurangi diskon keseluruhan
+        id_cabang: currentUser ? currentUser.id_cabang : '', // <-- Tambahkan baris ini
+        nama_cabang: currentUser ? currentUser.nama_cabang : '', // <-- Tambahkan baris ini
+        items: itemsToSave 
       };
 
       closeModalPembayaran();
