@@ -4816,14 +4816,21 @@ function prosesCheckoutReturFinal() {
       });
     };
 
+    let asposSyncInProgress = false;
     window.syncAllDataManual = function(isAuto) {
       const autoMode = isAuto === true;
       const btn = document.getElementById('btnSyncManual');
       const txt = document.getElementById('txtDbStatus');
+      if (asposSyncInProgress) {
+        if (!autoMode) alert('Sinkronisasi sedang berjalan. Tunggu sampai proses selesai sebelum mencoba lagi.');
+        return;
+      }
+      asposSyncInProgress = true;
       if (btn) { btn.disabled = true; btn.innerText = '⏳ Menyiapkan...'; }
 
       initIndexedDB(async function(success) {
         if (!success || !db) {
+          asposSyncInProgress = false;
           if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
           if (!autoMode) alert('Database lokal tidak dapat dibuka. Tutup tab POS lain lalu muat ulang halaman.');
           return;
@@ -5003,6 +5010,7 @@ function prosesCheckoutReturFinal() {
               '<span style="color:#087f8c;">Terakhir sinkron: '+timeString+'</span>';
           }
 
+          asposSyncInProgress = false;
           setTimeout(function(){
             if (btn) {
               btn.disabled = false;
@@ -5012,6 +5020,7 @@ function prosesCheckoutReturFinal() {
             }
           }, 2500);
         } catch(err) {
+          asposSyncInProgress = false;
           console.error('[AS-Pos] sync', err);
           if (btn) {
             btn.disabled = false;
