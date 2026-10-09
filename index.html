@@ -1585,14 +1585,18 @@
       }).prosesLogin(email, password);
     }
 
-    // Identitas cabang selalu ditampilkan bersama kasir agar cabang aktif mudah dibedakan.
+    // OWNER dengan id_cabang kosong adalah akun lintas cabang.
+    // Akun non-OWNER tanpa id_cabang tetap diberi peringatan; akses wajib divalidasi backend.
     function getCashierIdentityLabel(user) {
       user = user || currentUser || {};
       var nama = String(user.nama || 'Admin').trim();
       var idCabang = String(user.id_cabang || '').trim();
       var namaCabang = String(user.nama_cabang || '').trim();
-      // Jangan menyamarkan akun tanpa penugasan cabang: tampilkan peringatan yang jelas.
-      var idLabel = idCabang ? ' · ' + idCabang : ' · ID CABANG BELUM DIATUR';
+      var role = String(user.role || '').trim().toUpperCase();
+      var isOwnerAllBranches = role === 'OWNER' && !idCabang;
+      var idLabel = idCabang
+        ? ' · ' + idCabang
+        : (isOwnerAllBranches ? ' · OWNER / SEMUA CABANG' : ' · ID CABANG BELUM DIATUR');
       var namaLabel = namaCabang && namaCabang !== 'Cabang Utama' ? ' (' + namaCabang + ')' : '';
       return 'Kasir: ' + nama + idLabel + namaLabel;
     }
