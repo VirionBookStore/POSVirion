@@ -305,6 +305,7 @@
         <div class="sidebar-section">Database</div>
         <li><a href="#" onclick="switchMenu('masterBarang', this)">📚 Master Barang</a></li>
         <li><a href="#" onclick="switchMenu('supplier', this)">🏢 Supplier</a></li>
+        <li><a href="#" onclick="switchMenu('cabang', this)">🏪 Manajemen Cabang</a></li>
         <li><a href="#" onclick="switchMenu('promoManajemen', this)">🎁 Manajemen Promo</a></li>
         
         <div class="sidebar-section">Transaksi & Kasir</div>
@@ -579,6 +580,34 @@
                   </tr>
                 </thead>
                 <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- MANAJEMEN CABANG -->
+        <div id="sec-cabang" class="page-section">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="btn btn-primary" onclick="openCabangModal()">+ Tambah Cabang</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">Daftar Cabang Toko</div>
+            <div class="table-responsive">
+              <table id="tabelCabang">
+                <thead>
+                  <tr>
+                    <th>ID Cabang</th>
+                    <th>Nama Cabang</th>
+                    <th>Alamat</th>
+                    <th>Kontak</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="tabelCabangBody">
+                  <tr><td colspan="5" style="text-align: center;">Sedang memuat data cabang...</td></tr>
+                </tbody>
               </table>
             </div>
           </div>
@@ -1359,7 +1388,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbyI29sPM9mlE5uilXRIm1XyIgAkzaQxuYweiOiAWJz4IGHXUZ3zTuLjkeyH3wX3Jf0/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbzYZIsCuSi21kuVqGQ1Fz7aFPICDVz6I7KJ3KFu20D_ZynGrh4ptdWmwnQtnvZwf18/exec"
     };
 
     (function installGasBridge() {
@@ -1514,8 +1543,8 @@
 
     /* AS-POS ROLE: OWNER / ADMIN / USER */
     const AS_POS_ROLE_PERMISSIONS = {
-      OWNER:{menus:['dashboard','masterBarang','supplier','promoManajemen','posKasir','returPos','riwayatPenjualan','riwayatPerBarang','stokMasuk','returBarang','manajemenData']},
-      ADMIN:{menus:['dashboard','masterBarang','promoManajemen','posKasir','returPos','stokMasuk','returBarang','manajemenData']},
+      OWNER:{menus:['dashboard','masterBarang','supplier','cabang','promoManajemen','posKasir','returPos','riwayatPenjualan','riwayatPerBarang','stokMasuk','returBarang','manajemenData']},
+      ADMIN:{menus:['dashboard','masterBarang','cabang','promoManajemen','posKasir','returPos','stokMasuk','returBarang','manajemenData']},
       USER:{menus:['masterBarang','posKasir','stokMasuk','returBarang','manajemenData']}
     };
     function normalizeRole(role){return String(role||'').trim().toUpperCase();}
