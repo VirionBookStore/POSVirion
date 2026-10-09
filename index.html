@@ -4885,6 +4885,11 @@ function prosesCheckoutReturFinal() {
               batch = batchResult.data.data;
             } else if (batchResult && Array.isArray(batchResult.result)) {
               batch = batchResult.result;
+            } else if (batchResult && Array.isArray(batchResult.items)) {
+              // GAS getBarangBatch mengembalikan {offset, limit, total, items:[...]}.
+              batch = batchResult.items;
+            } else if (batchResult && batchResult.data && Array.isArray(batchResult.data.items)) {
+              batch = batchResult.data.items;
             }
 
             // Jika API batch pada deployment GAS lama belum mengembalikan
@@ -5260,7 +5265,7 @@ function prosesCheckoutReturFinal() {
    tetap bisa diperiksa walaupun engine utama gagal dimuat.
    ========================================================= */
 (function(){
-  const ASDB_VERSION = 5;
+  // Buka versi aktif database; jangan pernah meminta versi lebih rendah dari database yang ada.
   const ASDB_STORES = {
     masterBarang:'id_barang',
     supplier:'id_supplier',
@@ -5286,7 +5291,7 @@ function prosesCheckoutReturFinal() {
       };
       let req;
       try{
-        req=indexedDB.open('AS_POS_DB',ASDB_VERSION);
+        req=indexedDB.open('AS_POS_DB');
         req.onupgradeneeded=function(e){
           const d=e.target.result;
           Object.keys(ASDB_STORES).forEach(function(name){
