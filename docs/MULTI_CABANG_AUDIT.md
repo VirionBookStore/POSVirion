@@ -8,7 +8,10 @@ Batasan: perubahan ini berada di branch kerja. Jangan merge/deploy ke produksi s
 
 - Identitas kasir sekarang dirender sebagai `Kasir: Nama · ID_CABANG (Nama Cabang)`.
 - Label yang sama digunakan setelah login, saat sesi dipulihkan dari localStorage, dan pada struk.
+- Label kasir menerima beberapa alias properti ID/nama cabang (`id_cabang`/`idCabang`, `nama_cabang`/`namaCabang`/`cabang_nama`) untuk kompatibilitas format respons.
 - Jika role akun `OWNER` dan `id_cabang` kosong, layar menampilkan `OWNER / SEMUA CABANG`. Jika akun non-OWNER tidak memiliki `id_cabang`, layar menampilkan `ID CABANG BELUM DIATUR`.
+- Pengambilan lima kelompok data tambahan saat sinkronisasi manual kini berjalan paralel, sedangkan penulisan IndexedDB tetap berurutan.
+- Master Barang lokal tidak dihapus sebelum respons batch pertama diterima. Jika batch berikutnya gagal, pemulihan cache lama secara penuh masih menjadi pekerjaan lanjutan.
 - Payload transaksi dan antrean offline menyertakan `id_cabang`, `nama_cabang`, `email_kasir`, dan `role_kasir` untuk kebutuhan validasi backend berikutnya. Field dari browser belum boleh dianggap tepercaya oleh backend.
 
 ## Temuan backend yang menghalangi multi-cabang penuh
