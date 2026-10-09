@@ -1591,7 +1591,8 @@
       var nama = String(user.nama || 'Admin').trim();
       var idCabang = String(user.id_cabang || '').trim();
       var namaCabang = String(user.nama_cabang || '').trim();
-      var idLabel = idCabang ? ' · ' + idCabang : '';
+      // Jangan menyamarkan akun tanpa penugasan cabang: tampilkan peringatan yang jelas.
+      var idLabel = idCabang ? ' · ' + idCabang : ' · ID CABANG BELUM DIATUR';
       var namaLabel = namaCabang && namaCabang !== 'Cabang Utama' ? ' (' + namaCabang + ')' : '';
       return 'Kasir: ' + nama + idLabel + namaLabel;
     }
