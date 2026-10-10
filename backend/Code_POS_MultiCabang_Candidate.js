@@ -146,7 +146,7 @@ function mcCreateTransfer(actorEmail, sourceBranch, destinationBranch, items, no
   if(!MC_BRANCHES.some(function(b){return b.id===dst;}))throw Error('Cabang tujuan tidak dikenal.');
   if(src===dst)throw Error('Cabang asal dan tujuan tidak boleh sama.');
   if(!Array.isArray(items)||!items.length)throw Error('Transfer harus berisi minimal satu barang.');
-  var clean=items.map(function(x){var id=String(x.id_barang||'').trim(),q=Number(x.qty);if(!id||!isFinite(q)||q<=0)throw Error('Setiap item transfer harus memiliki id_barang dan qty positif.');return {id_barang:id,qty:q};});
+  var seenItems={};var clean=items.map(function(x){var id=String(x.id_barang||'').trim(),q=Number(x.qty);if(!id||!isFinite(q)||q<=0)throw Error('Setiap item transfer harus memiliki id_barang dan qty positif.');if(seenItems[id])throw Error('ID barang duplikat pada transfer: '+id+'. Gabungkan jumlah menjadi satu baris.');seenItems[id]=true;return {id_barang:id,qty:q};});
   var ss=SpreadsheetApp.getActiveSpreadsheet(), sh=ss.getSheetByName('Transfer_Cabang'), id='TRF-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
   sh.appendRow([id,new Date(),src,dst,'DRAFT',JSON.stringify(clean),actor.email,'','','',String(note||'')]);
   return {status:'success',id_transfer:id,status_transfer:'DRAFT',items:clean,cabang_asal:src,cabang_tujuan:dst};
