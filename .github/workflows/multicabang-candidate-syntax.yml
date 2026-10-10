@@ -1,0 +1,25 @@
+name: Validate multi-branch candidate syntax
+
+on:
+  push:
+    branches:
+      - fix/multi-cabang-audit-20261009
+    paths:
+      - 'backend/Code_POS_MultiCabang_Candidate.js'
+      - '.github/workflows/multicabang-candidate-syntax.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check JavaScript syntax
+        run: node --check backend/Code_POS_MultiCabang_Candidate.js
+      - name: Report staged-only status
+        run: |
+          echo "Syntax check only. This workflow does not deploy Apps Script or modify spreadsheet data."
