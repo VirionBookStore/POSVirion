@@ -1642,6 +1642,9 @@ window.loadBarang = function(isLocalOnly = false) {
   }
 
   if (!isLocalOnly) {
+    // TAMBAHKAN BARIS INI UNTUK MENGAMBIL ID CABANG KASIR
+    let branchId = currentUser ? currentUser.id_cabang : ""; 
+    
     google.script.run.withSuccessHandler(function(serverData) {
       if (serverData && serverData.length > 0) {
         globalDataBarang = serverData;
@@ -1649,7 +1652,7 @@ window.loadBarang = function(isLocalOnly = false) {
         if (typeof renderTabelBarang === 'function') renderTabelBarang(serverData);
         if (typeof renderPosProductList === 'function') renderPosProductList();
       }
-    }).getBarang();
+    }).getBarang(branchId); // PASTIKAN MENGIRIM branchId KESINI
   }
 };
     
@@ -1995,18 +1998,19 @@ function loadPosKatalog() {
   let searchEl = document.getElementById("searchPosMobile");
   if (searchEl) searchEl.value = "";
   
-  // Render langsung jika data sudah ada di memori
   if (globalDataBarang && globalDataBarang.length > 0) {
     renderPosSuppliers();
     renderPosProductList();
   }
   
-  // Tarik update terbaru di background
+  // TAMBAHKAN BARIS INI
+  let branchId = currentUser ? currentUser.id_cabang : "";
+  
   google.script.run.withSuccessHandler(function(data) {
     globalDataBarang = data;
     renderPosSuppliers();
     renderPosProductList();
-  }).getBarang();
+  }).getBarang(branchId); // PASTIKAN MENGIRIM branchId KESINI
 }
 
 // 2. Buat fungsi Render Supplier (Chips horizontal)
@@ -4218,9 +4222,10 @@ function prosesCheckoutReturFinal() {
   let payload = {
     petugas: petugasNama,
     metode: metode,
+    id_cabang: currentUser ? currentUser.id_cabang : '', // TAMBAHKAN BARIS INI
     items: JSON.parse(JSON.stringify(keranjangRetur))
   };
-
+  
   // Jangan tutup/ubah keranjang sebelum server benar-benar berhasil.
   asposGasCallPromise('simpanReturTukarTransaksi', [payload])
     .then(function(res) {
