@@ -719,7 +719,9 @@
     
     <!-- Bagian Search & Scanner -->
     <div class="pos-search-wrapper">
+      <!-- Dropdown Cabang Khusus Owner -->
       <select id="posPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="loadPosKatalog()"></select>
+      
       <input type="text" id="searchPosMobile" class="form-control pos-search-input" placeholder="Cari nama atau kode" oninput="handlePosSearchMobile()" autocomplete="off">
       <button class="btn-scan-mobile" onclick="togglePosScanner()">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3M9 9h6v6H9z"/></svg>
@@ -1393,7 +1395,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbyuG6d_H4cHXWqcKQZ5Z0RpvpRxSUb7k6jJb0P46_R56b280B7OBoBG-yHp4K1P_44/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbygte0eqApepkCfVizoVHLQLc1fYfmPbkp9-WVlSGEBe_CSQeNuFjzTHHslIslDeu4/exec"
     };
 
     (function installGasBridge() {
@@ -1702,28 +1704,31 @@ window.loadBarang = function(isLocalOnly = false) {
 
     function initApp() {
       loadLogoToko();
-      // Data dasar tetap dipanaskan, tetapi halaman awal mengikuti hak akses role.
       loadBarang();
       google.script.run.withSuccessHandler(function(data) {
         globalPromoData = data;
       }).getPromoList();
+
+      // --- GENERATE FILTER CABANG KHUSUS OWNER ---
       if (isOwner()) {
         google.script.run.withSuccessHandler(function(cabangs) {
-           let dashSelect = document.getElementById("dashboardPilihCabang");
-           let posSelect = document.getElementById("posPilihCabang");
+           // Fungsi bantu pemasang dropdown
+           const pasangDropdown = (idElement, teksAwal) => {
+             let el = document.getElementById(idElement);
+             if(el) {
+               el.style.display = "inline-block";
+               el.innerHTML = `<option value="">${teksAwal}</option>`;
+               cabangs.forEach(c => el.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
+             }
+           };
            
-           if(dashSelect) {
-             dashSelect.style.display = "block";
-             dashSelect.innerHTML = '<option value="">Semua Cabang (Global)</option>';
-             cabangs.forEach(c => dashSelect.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
-           }
-           if(posSelect) {
-             posSelect.style.display = "block";
-             posSelect.innerHTML = '<option value="">(Pilih Cabang Transaksi)</option>';
-             cabangs.forEach(c => posSelect.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
-           }
+           // Pasang ke Dashboard & Kasir
+           pasangDropdown("dashboardPilihCabang", "Semua Cabang (Global)");
+           pasangDropdown("posPilihCabang", "(Pilih Cabang Transaksi)");
+           
         }).getCabang();
       }
+      // -------------------------------------------
 
       const role = normalizeRole(currentUser && currentUser.role);
       const defaultMenu = role === 'USER' ? 'posKasir' : 'dashboard';
@@ -1812,6 +1817,29 @@ window.loadBarang = function(isLocalOnly = false) {
         })
         .getDashboardData(date, date);
     }
+
+    function loadCabang() {
+  var tbody = document.getElementById("tabelCabangBody");
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Memuat data cabang...</td></tr>';
+  
+  google.script.run.withSuccessHandler(function(data) {
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Belum ada data cabang terdaftar.</td></tr>';
+      return;
+    }
+    data.forEach(function(c) {
+      tbody.innerHTML += `<tr>
+        <td><b>${c.id_cabang}</b></td>
+        <td>${c.nama_cabang}</td>
+        <td>${c.alamat}</td>
+        <td>${c.telepon}</td>
+        <td><b style="color: ${c.status === 'Aktif' ? '#198754' : '#dc3545'};">${c.status}</b></td>
+      </tr>`;
+    });
+  }).getCabang();
+}
 
     // Dipertahankan untuk kompatibilitas dengan kode/versi lama.
     function loadLaporanCustom() {
