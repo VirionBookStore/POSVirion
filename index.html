@@ -1642,9 +1642,9 @@ window.loadBarang = function(isLocalOnly = false) {
   }
 
   if (!isLocalOnly) {
-    // TAMBAHKAN BARIS INI UNTUK MENGAMBIL ID CABANG KASIR
-    let branchId = currentUser ? currentUser.id_cabang : ""; 
-    
+    // TAMBAHKAN VARIABEL INI
+    let branchId = currentUser ? currentUser.id_cabang : "";
+
     google.script.run.withSuccessHandler(function(serverData) {
       if (serverData && serverData.length > 0) {
         globalDataBarang = serverData;
@@ -1998,14 +1998,16 @@ function loadPosKatalog() {
   let searchEl = document.getElementById("searchPosMobile");
   if (searchEl) searchEl.value = "";
   
+  // Render langsung jika data sudah ada di memori
   if (globalDataBarang && globalDataBarang.length > 0) {
     renderPosSuppliers();
     renderPosProductList();
   }
   
-  // TAMBAHKAN BARIS INI
+  // TAMBAHKAN VARIABEL INI
   let branchId = currentUser ? currentUser.id_cabang : "";
   
+  // Tarik update terbaru di background
   google.script.run.withSuccessHandler(function(data) {
     globalDataBarang = data;
     renderPosSuppliers();
@@ -4940,7 +4942,8 @@ function prosesCheckoutReturFinal() {
             // berjalan sekarang tanpa mengorbankan mode batch untuk data besar.
             if (!batch.length && offset === 0 && totalBarang <= 5000) {
               if (txt) txt.innerHTML = '<b style="color:#d97706;">API batch belum mengembalikan data. Menggunakan mode kompatibilitas...</b>';
-              const fallbackData = await gasCall('getBarang', []);
+              // PASTIKAN [branchId] DIKIRIMKAN DI DALAM ARRAY
+              const fallbackData = await gasCall('getBarang', [branchId]);
               if (Array.isArray(fallbackData) && fallbackData.length) {
                 batch = fallbackData;
               } else if (fallbackData && Array.isArray(fallbackData.data)) {
