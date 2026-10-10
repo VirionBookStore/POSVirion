@@ -185,3 +185,64 @@ function mcApplyStockDelta_(branchId, itemId, delta, eventId, kind, reference, a
   try { return mcApplyStockDeltaUnlocked_(branchId,itemId,delta,eventId,kind,reference,actorEmail); }
   finally { lock.releaseLock(); }
 }
+
+
+/* ---------- Sesi bertanda tangan (kandidat; perlu dihubungkan ke login/bridge) ---------- */
+var MC_SESSION_TTL_SECONDS = 8 * 60 * 60;
+function mcEnsureSessionSecret_() {
+  var props=PropertiesService.getScriptProperties(), key='MC_SESSION_HMAC_SECRET_V1', secret=props.getProperty(key);
+  if(!secret) {
+    secret=Utilities.getUuid()+Utilities.getUuid()+Utilities.getUuid();
+    props.setProperty(key,secret);
+  }
+  return secret;
+}
+function mcB64Url_(bytes) {
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,'');
+}
+function mcSignSessionPayload_(payloadText) {
+  var sig=Utilities.computeHmacSha256Signature(payloadText,mcEnsureSessionSecret_());
+  return mcB64Url_(sig);
+}
+function mcIssueSession_(user) {
+  if(!user||!user.email)throw Error('Identitas pengguna hasil login tidak valid.');
+  // Re-load role and branch from server-side User sheet; never sign client-supplied claims.
+  var actor=mcResolveActor_(user.email), now=Math.floor(Date.now()/1000);
+  var payload={v:1,sub:actor.email,role:actor.role,branch:actor.id_cabang,all:actor.allBranches,iat:now,exp:now+MC_SESSION_TTL_SECONDS,nonce:Utilities.getUuid()};
+  var body=mcB64Url_(Utilities.newBlob(JSON.stringify(payload)).getBytes());
+  return body+'.'+mcSignSessionPayload_(body);
+}
+function mcVerifySession_(token) {
+  var parts=String(token||'').split('.');
+  if(parts.length!==2||!parts[0]||!parts[1])throw Error('Sesi tidak valid. Silakan login ulang.');
+  var expected=mcSignSessionPayload_(parts[0]);
+  // Constant-time-ish comparison avoids returning which part failed.
+  var a=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,parts[1]);
+  var b=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,expected);
+  if(a.length!==b.length)throw Error('Sesi tidak valid. Silakan login ulang.');
+  var diff=0;for(var i=0;i<a.length;i++)diff|=(a[i]^b[i]);
+  if(diff!==0)throw Error('Sesi tidak valid. Silakan login ulang.');
+  var payload;
+  try{payload=JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString('UTF-8'));}catch(e){throw Error('Sesi tidak valid. Silakan login ulang.');}
+  var now=Math.floor(Date.now()/1000);
+  if(payload.v!==1||!payload.sub||!payload.exp||now>=Number(payload.exp)||Number(payload.iat)>now+60)throw Error('Sesi kedaluwarsa/tidak valid. Silakan login ulang.');
+  // Revalidate user against current server-side role and branch assignment, so disabled/moved users lose access.
+  var actor=mcResolveActor_(payload.sub);
+  if(actor.role!==payload.role||actor.id_cabang!==payload.branch||actor.allBranches!==payload.all)throw Error('Hak akses pengguna berubah. Silakan login ulang.');
+  return actor;
+}
+function mcLoginAndIssueSession_(email,password) {
+  var result=prosesLogin(email,password);
+  if(!result||result.status!=='success'||!result.user)throw Error((result&&result.message)||'Login gagal.');
+  var token=mcIssueSession_(result.user);
+  return {status:'success',user:result.user,session_token:token,expires_in:MC_SESSION_TTL_SECONDS};
+}
+function mcRequireSessionBranch_(token,branchId) {
+  var actor=mcVerifySession_(token);
+  mcAssertBranch_(actor,branchId);
+  return actor;
+}
+function mcSessionSelfTest() {
+  var secret=mcEnsureSessionSecret_();
+  return {status:secret?'READY':'ERROR',ttl_seconds:MC_SESSION_TTL_SECONDS,secret_configured:true,warning:'Jangan tampilkan nilai rahasia; fungsi ini tidak mengembalikannya.'};
+}
