@@ -60,3 +60,22 @@ Yang sudah disiapkan di branch (belum dihubungkan ke endpoint produksi):
 - Runner migrasi dengan frasa konfirmasi eksplisit, backup sheet sumber sebelum menulis alokasi, verifikasi jumlah produk dan total stok; nilai stok master lama tidak dihapus.
 
 **Batasan penting:** ini fondasi migrasi, bukan perbaikan POS lengkap. File kandidat belum dimasukkan ke allowlist `doGet`/`doPost`, dan operasi penjualan, barang masuk, retur, koreksi, katalog/batch, dashboard/laporan, serta sinkronisasi offline belum dialihkan ke `Stok_Cabang`. Transfer antar-cabang baru memiliki skema, belum alur kirim/terima yang aktif. Jangan menjalankan runner di spreadsheet produksi. Langkah berikutnya adalah integrasi semua endpoint dan pengujian pada salinan spreadsheet, termasuk pencegahan transaksi ganda dan otorisasi server-side, baru kemudian rencana migrasi/deploy.
+
+
+## Risiko keamanan yang ditemukan saat mulai integrasi
+
+- Bridge `doPost` menerima nama fungsi dan argumen dari request, lalu menjalankan allowlist fungsi tanpa sesi autentikasi terverifikasi.
+- Login lama mengembalikan identitas/role/cabang, tetapi tidak menerbitkan token sesi bertanda tangan yang diverifikasi pada setiap request. Karena itu, email/role/cabang yang dikirim browser tidak cukup untuk otorisasi.
+- `doGet` juga menyediakan jalur JSONP untuk beberapa fungsi baca. Filter cabang harus diterapkan di backend dan jalur baca lama tidak boleh menjadi bypass.
+- Maka, **belum aman menambahkan fungsi stok/transfer ke allowlist** hanya dengan menerima `email` atau `id_cabang` dari payload. Tahap integrasi harus menambahkan sesi bertanda tangan server-side, memvalidasi sesi pada setiap request, lalu menerapkan scope role/cabang pada setiap fungsi baca/tulis; login dan fungsi publik harus menjadi pengecualian yang eksplisit.
+- Password pada sheet `User` saat ini dibandingkan langsung sebagai teks biasa. Ini perlu diperlakukan sebagai temuan keamanan terpisah; perubahan penyimpanan password harus direncanakan agar tidak mengunci pengguna yang sudah ada.
+
+## Gerbang sebelum rilis
+
+1. Kerjakan seluruh integrasi hanya pada salinan GAS dan salinan spreadsheet.
+2. Tambahkan token sesi yang ditandatangani server; jangan mempercayai role/email/cabang dari browser.
+3. Alihkan POS, stok masuk/retur, koreksi, laporan, dashboard, katalog/batch dan sinkronisasi offline ke stok cabang; transaksi offline harus membawa ID idempoten dan cabang asal.
+4. Selesaikan transfer antar-cabang (buat, kirim, terima, selisih, duplikasi/retry) dengan pencatatan mutasi.
+5. Uji regresi data lama dan skenario akses lintas cabang, termasuk OWNER kosong cabang, ADMIN/USER per cabang, offline/retry, retur dan pembatalan.
+6. Bandingkan jumlah baris dan total stok sebelum/sesudah migrasi; simpan backup dan log rekonsiliasi.
+7. Baru setelah laporan pengujian dan migrasi disetujui, siapkan deployment GAS dan pembaruan URL; jangan mengganti URL produksi sebelum backend yang cocok benar-benar diterbitkan dan diuji.
