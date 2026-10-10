@@ -87,3 +87,20 @@ Yang sudah disiapkan di branch (belum dihubungkan ke endpoint produksi):
 - Alur transfer kandidat mencakup `DRAFT → SENDING → SENT → RECEIVING → RECEIVED`; pengiriman mengurangi stok cabang asal, penerimaan menambah stok cabang tujuan, dan setiap item memakai event ID idempoten.
 - Fungsi kandidat tetap **belum dipanggil oleh aplikasi** dan sengaja belum masuk allowlist endpoint. Alasan utamanya: API produksi saat ini belum mempunyai sesi bertanda tangan yang bisa membuktikan identitas request. Mengaktifkan transfer sebelum autentikasi dan pengujian retry selesai akan berisiko terhadap stok.
 - Verifikasi otomatis terhadap Google Sheets belum bisa dinyatakan lulus karena fungsi perlu diuji di salinan spreadsheet GAS. Sintaks kandidat juga perlu diperiksa dari editor GAS sebelum pengujian integrasi.
+
+
+### Update 10 Oktober — sesi dan endpoint kandidat
+
+- Ditambahkan primitive sesi bertanda tangan HMAC dengan masa berlaku 8 jam. Token memuat klaim yang diambil dari sheet User di server; verifikasi sesi memuat ulang role dan cabang agar perubahan penugasan pengguna membatalkan sesi lama.
+- Ditambahkan wrapper kandidat untuk membaca stok cabang, mutasi stok, serta buat/kirim/terima transfer yang memperoleh email aktor dari token, bukan argumen browser.
+- Ditambahkan GitHub Actions workflow `.github/workflows/multicabang-candidate-syntax.yml` untuk `node --check` terhadap file kandidat. Ini hanya pemeriksaan sintaks, bukan uji Apps Script atau Google Sheets.
+- Belum ada penggantian `doPost` produksi atau penambahan endpoint ke allowlist lama. Ini sengaja: bridge lama masih mengizinkan banyak fungsi tanpa sesi, sehingga menambahkan endpoint aman baru saja tidak menghilangkan jalur lama yang tidak aman.
+- Belum ada eksekusi migrasi spreadsheet. Belum ada klaim bahwa sintaks lulus sampai hasil workflow terlihat, dan belum ada uji integrasi nyata di salinan spreadsheet.
+
+### Pekerjaan wajib sebelum penggunaan nyata
+
+1. Buat salinan project Apps Script dan spreadsheet untuk staging.
+2. Integrasikan login agar mengembalikan token sesi; update bridge frontend agar menyimpan dan mengirim token tanpa menyimpan password.
+3. Ganti bridge staging dengan dispatcher yang hanya mengizinkan fungsi publik/login tanpa token; seluruh fungsi lain wajib memverifikasi token dan role/cabang.
+4. Integrasikan transaksi penjualan, barang masuk, retur, koreksi, laporan, dashboard, batch master dan sinkronisasi offline dengan stok cabang. Pertahankan skema laporan lama melalui adapter agar tidak merusak riwayat.
+5. Tambahkan tes otomatis serta uji manual di salinan spreadsheet untuk migrasi, retry offline, transfer parsial/gagal, retur, hak akses, dan rekonsiliasi.
