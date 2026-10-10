@@ -246,3 +246,47 @@ function mcSessionSelfTest() {
   var secret=mcEnsureSessionSecret_();
   return {status:secret?'READY':'ERROR',ttl_seconds:MC_SESSION_TTL_SECONDS,secret_configured:true,warning:'Jangan tampilkan nilai rahasia; fungsi ini tidak mengembalikannya.'};
 }
+
+
+/* ---------- API cabang terproteksi untuk integrasi bertahap ---------- */
+function mcGetStockCabangSecure_(token, branchId) {
+  var actor=mcRequireSessionBranch_(token,branchId), branch=mcAssertBranch_(actor,branchId);
+  var ss=SpreadsheetApp.getActiveSpreadsheet(), stock=ss.getSheetByName('Stok_Cabang'), barang=ss.getSheetByName('Barang');
+  var sh=mcHeaders_(stock), bh=mcHeaders_(barang), map={}, result=[];
+  if(barang.getLastRow()>1)barang.getRange(2,1,barang.getLastRow()-1,barang.getLastColumn()).getValues().forEach(function(r){var id=String(r[bh.id_barang]||'').trim();if(id)map[id]={id_barang:id,nama_barang:r[bh.nama_barang],gambar:r[bh.gambar],supplier:r[bh.supplier],harga_beli:r[bh.harga_beli],harga_jual:r[bh.harga_jual],lokasi_rak:r[bh.lokasi_rak],kategori:r[bh.kategori],status:r[bh.status]};});
+  if(stock.getLastRow()>1)stock.getRange(2,1,stock.getLastRow()-1,stock.getLastColumn()).getValues().forEach(function(r){
+    if(String(r[sh.id_cabang]||'').trim().toUpperCase()!==branch)return;
+    var id=String(r[sh.id_barang]||'').trim();if(!map[id])return;
+    result.push(Object.assign({},map[id],{id_cabang:branch,stok:Number(r[sh.stok])||0}));
+  });
+  return {id_cabang:branch,items:result,total:result.length};
+}
+function mcAdjustStockSecure_(token, branchId, itemId, delta, eventId, kind, reference) {
+  var actor=mcRequireSessionBranch_(token,branchId);
+  return mcApplyStockDelta_(branchId,itemId,delta,eventId,kind,reference,actor.email);
+}
+function mcCreateTransferSecure_(token, sourceBranch, destinationBranch, items, note) {
+  var actor=mcVerifySession_(token);
+  return mcCreateTransfer(actor.email,sourceBranch,destinationBranch,items,note);
+}
+function mcSendTransferSecure_(token, transferId) {
+  var actor=mcVerifySession_(token);
+  return mcTransferStep_(actor.email,transferId,'KIRIM');
+}
+function mcReceiveTransferSecure_(token, transferId) {
+  var actor=mcVerifySession_(token);
+  return mcTransferStep_(actor.email,transferId,'TERIMA');
+}
+function mcCandidateSecureDispatch(functionName, args, sessionToken) {
+  args=Array.isArray(args)?args:[];
+  var token=String(sessionToken||'');
+  var handlers={
+    mcGetStockCabang: function(){return mcGetStockCabangSecure_(token,args[0]);},
+    mcAdjustStockCabang: function(){return mcAdjustStockSecure_(token,args[0],args[1],args[2],args[3],args[4],args[5]);},
+    mcCreateTransfer: function(){return mcCreateTransferSecure_(token,args[0],args[1],args[2],args[3]);},
+    mcSendTransfer: function(){return mcSendTransferSecure_(token,args[0]);},
+    mcReceiveTransfer: function(){return mcReceiveTransferSecure_(token,args[0]);}
+  };
+  if(!handlers[functionName])throw Error('Fungsi kandidat tidak diizinkan: '+functionName);
+  return handlers[functionName]();
+}
