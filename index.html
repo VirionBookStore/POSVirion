@@ -1792,7 +1792,7 @@ window.loadBarang = function(isLocalOnly = false) {
       data.forEach(function(item) {
         var tr = document.createElement("tr");
         var imgTag = item.gambar ? `<img src="${item.gambar}" class="img-thumb" onerror="this.onerror=null;this.src='https://via.placeholder.com/36?text=No+Img';">` : `<div class="img-thumb">No Img</div>`;
-        var safeId = String(item.id_barang ?? '').replace(...)
+        var safeId = String(item.id_barang ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         var isTidakAktif = item.status === 'Tidak Aktif';
         var statusBadge = isTidakAktif ? '<span style="color:#dc3545;font-weight:bold;">Tidak Aktif</span>' : '<span style="color:#198754;font-weight:bold;">Aktif</span>';
 
