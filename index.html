@@ -1389,7 +1389,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxqzeXJy8G3TbcPSsZqPk0mz3Cipihfsek3vPxnRi1pjJv9JCh2Wr-aPshZIquBY6o/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbz3ikSf2-m83hwDjBlCLFPByhyJHkKI1tXiwlG8F1ibFINEILgEuHw9hMw12gUSzgM/exec"
     };
 
     (function installGasBridge() {
@@ -1632,27 +1632,38 @@
     }
 // Memaksa fungsi loadBarang ke global agar selalu bisa dipanggil
 window.loadBarang = function(isLocalOnly = false) {
-  let cachedBarang = localStorage.getItem('as_pos_cache_barang');
-  if (cachedBarang) {
-    try {
-      globalDataBarang = JSON.parse(cachedBarang);
-      if (typeof renderTabelBarang === 'function') renderTabelBarang(globalDataBarang);
-      if (typeof renderPosProductList === 'function') renderPosProductList(); 
-    } catch(e) {}
+  // Coba muat dari IndexedDB terlebih dahulu (LOCAL FIRST)
+  if (typeof initIndexedDB === 'function') {
+    initIndexedDB(function(ok) {
+      if (ok && db) {
+        getAllFromStore('masterBarang').then(function(data) {
+          if (data && data.length > 0) {
+            globalDataBarang = data;
+            if (typeof renderTabelBarang === 'function') renderTabelBarang(data);
+            if (typeof renderPosProductList === 'function') renderPosProductList();
+          }
+        }).catch(e => console.warn(e));
+      }
+    });
   }
 
   if (!isLocalOnly) {
-    // TAMBAHKAN VARIABEL INI
     let branchId = currentUser ? currentUser.id_cabang : "";
-
     google.script.run.withSuccessHandler(function(serverData) {
       if (serverData && serverData.length > 0) {
         globalDataBarang = serverData;
-        localStorage.setItem('as_pos_cache_barang', JSON.stringify(serverData));
+        
+        // Simpan ke IndexedDB jika tersedia
+        if (typeof initIndexedDB === 'function') {
+          initIndexedDB(function(ok) {
+            if (ok && db) replaceStore('masterBarang', serverData);
+          });
+        }
+        
         if (typeof renderTabelBarang === 'function') renderTabelBarang(serverData);
         if (typeof renderPosProductList === 'function') renderPosProductList();
       }
-    }).getBarang(branchId); // PASTIKAN MENGIRIM branchId KESINI
+    }).getBarang(branchId);
   }
 };
     
@@ -1998,21 +2009,31 @@ function loadPosKatalog() {
   let searchEl = document.getElementById("searchPosMobile");
   if (searchEl) searchEl.value = "";
   
-  // Render langsung jika data sudah ada di memori
-  if (globalDataBarang && globalDataBarang.length > 0) {
-    renderPosSuppliers();
-    renderPosProductList();
+  if (typeof initIndexedDB === 'function') {
+    initIndexedDB(function(ok) {
+      if(ok && db) {
+         getAllFromStore('masterBarang').then(function(data) {
+           if (data && data.length > 0) {
+             globalDataBarang = data;
+             renderPosSuppliers();
+             renderPosProductList();
+           }
+         });
+      }
+    });
   }
-  
-  // TAMBAHKAN VARIABEL INI
+
   let branchId = currentUser ? currentUser.id_cabang : "";
-  
-  // Tarik update terbaru di background
   google.script.run.withSuccessHandler(function(data) {
     globalDataBarang = data;
+    if (typeof initIndexedDB === 'function') {
+      initIndexedDB(function(ok) {
+         if (ok && db) replaceStore('masterBarang', data);
+      });
+    }
     renderPosSuppliers();
     renderPosProductList();
-  }).getBarang(branchId); // PASTIKAN MENGIRIM branchId KESINI
+  }).getBarang(branchId);
 }
 
 // 2. Buat fungsi Render Supplier (Chips horizontal)
