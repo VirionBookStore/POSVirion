@@ -4905,8 +4905,8 @@ function prosesCheckoutReturFinal() {
           let duplicateBarang = 0;
           const batchSize = 1000;
           for (let offset = 0; offset < totalBarang; offset += batchSize) {
-            const batchResult = await gasCall('getBarangBatch', [offset, batchSize]);
-
+            const branchId = currentUser ? currentUser.id_cabang : null;
+            const batchResult = await gasCall('getBarangBatch', [offset, batchSize, branchId]);
             // GAS dapat mengembalikan batch dalam beberapa bentuk:
             // 1) array langsung
             // 2) {data:[...]}
