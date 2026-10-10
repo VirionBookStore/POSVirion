@@ -89,3 +89,93 @@ function mcRunLegacyStockMigration(confirmation) {
 function mcCandidateSelfTest() {
   return {status:'STATIC_CHECK_ONLY',branches:MC_BRANCHES.map(function(b){return b.id;}),migration_confirmation_required:true,production_deployment:false};
 }
+
+/*
+ * Fungsi stok/transfer berikut hanya kandidat staging.
+ * Jangan masukkan ke allowlist API sebelum setiap request memakai token sesi
+ * bertanda tangan server-side; email dari browser bukan bukti identitas.
+ */
+function mcFindStockRow_(sheet, branchId, itemId) {
+  var h=mcHeaders_(sheet), last=sheet.getLastRow();
+  if(last<2)return {row:0,headers:h};
+  var rows=sheet.getRange(2,1,last-1,sheet.getLastColumn()).getValues(), found=0;
+  for(var i=0;i<rows.length;i++){
+    if(String(rows[i][h.id_cabang]||'').trim().toUpperCase()===branchId &&
+       String(rows[i][h.id_barang]||'').trim()===itemId){
+      if(found)throw Error('Duplikasi stok cabang untuk '+branchId+'/'+itemId);
+      found=i+2;
+    }
+  }
+  return {row:found,headers:h};
+}
+function mcApplyStockDelta_(branchId, itemId, delta, eventId, kind, reference, actorEmail) {
+  var actor=mcResolveActor_(actorEmail), branch=mcAssertBranch_(actor,branchId);
+  var id=String(itemId||'').trim(), ev=String(eventId||'').trim(), d=Number(delta);
+  if(!id||!ev||!isFinite(d)||d===0)throw Error('ID barang, ID event, dan perubahan stok valid wajib diisi.');
+  var ss=SpreadsheetApp.getActiveSpreadsheet(), stock=ss.getSheetByName('Stok_Cabang'), log=ss.getSheetByName('Mutasi_Stok_Cabang');
+  var lh=mcHeaders_(log), existing=0, logRows=log.getLastRow()>1?log.getRange(2,1,log.getLastRow()-1,log.getLastColumn()).getValues():[];
+  for(var i=0;i<logRows.length;i++)if(String(logRows[i][lh.id_event]||'')===ev){existing=i+2;break;}
+  var sh=mcFindStockRow_(stock,branch,id), current=sh.row?Number(stock.getRange(sh.row,sh.headers.stok+1).getValue())||0:0;
+  if(existing){
+    var saved=log.getRange(existing,1,1,log.getLastColumn()).getValues()[0];
+    var before=Number(saved[lh.stok_sebelum])||0, after=Number(saved[lh.stok_sesudah])||0, status=String(saved[lh.status]||'');
+    if(status==='APPLIED')return {status:'success',duplicate:true,stok:after,event_id:ev};
+    if(status!=='PENDING')throw Error('Event mutasi ada dengan status tidak dikenal: '+status);
+    if(current===before){
+      if(!sh.row){stock.appendRow([branch,id,after,new Date(),actor.email]);}
+      else {stock.getRange(sh.row,sh.headers.stok+1).setValue(after);stock.getRange(sh.row,sh.headers.updated_at+1).setValue(new Date());stock.getRange(sh.row,sh.headers.updated_by+1).setValue(actor.email);}
+    } else if(current!==after) throw Error('Pemulihan mutasi berhenti: stok sekarang berbeda dari nilai sebelum/sesudah yang tercatat.');
+    log.getRange(existing,lh.status+1).setValue('APPLIED');
+    return {status:'success',duplicate:true,recovered:true,stok:after,event_id:ev};
+  }
+  var next=current+d;
+  if(next<0)throw Error('Stok cabang '+branch+' tidak cukup untuk barang '+id+'. Tersedia '+current+', dibutuhkan '+Math.abs(d)+'.');
+  var logRow=new Array(log.getLastColumn()).fill('');
+  logRow[lh.id_event]=ev;logRow[lh.tanggal]=new Date();logRow[lh.id_cabang]=branch;logRow[lh.id_barang]=id;
+  logRow[lh.delta]=d;logRow[lh.stok_sebelum]=current;logRow[lh.stok_sesudah]=next;logRow[lh.jenis]=kind||'KOREKSI';
+  logRow[lh.referensi]=reference||'';logRow[lh.aktor_email]=actor.email;logRow[lh.status]='PENDING';
+  log.appendRow(logRow);
+  if(!sh.row)stock.appendRow([branch,id,next,new Date(),actor.email]);
+  else {stock.getRange(sh.row,sh.headers.stok+1).setValue(next);stock.getRange(sh.row,sh.headers.updated_at+1).setValue(new Date());stock.getRange(sh.row,sh.headers.updated_by+1).setValue(actor.email);}
+  log.getRange(log.getLastRow(),lh.status+1).setValue('APPLIED');
+  return {status:'success',duplicate:false,stok:next,event_id:ev};
+}
+function mcCreateTransfer(actorEmail, sourceBranch, destinationBranch, items, note) {
+  var actor=mcResolveActor_(actorEmail), src=mcAssertBranch_(actor,sourceBranch), dst=String(destinationBranch||'').trim().toUpperCase();
+  if(actor.role!=='OWNER'&&actor.role!=='ADMIN')throw Error('Hanya OWNER/ADMIN yang boleh membuat transfer.');
+  if(!MC_BRANCHES.some(function(b){return b.id===dst;}))throw Error('Cabang tujuan tidak dikenal.');
+  if(src===dst)throw Error('Cabang asal dan tujuan tidak boleh sama.');
+  if(!Array.isArray(items)||!items.length)throw Error('Transfer harus berisi minimal satu barang.');
+  var clean=items.map(function(x){var id=String(x.id_barang||'').trim(),q=Number(x.qty);if(!id||!isFinite(q)||q<=0)throw Error('Setiap item transfer harus memiliki id_barang dan qty positif.');return {id_barang:id,qty:q};});
+  var ss=SpreadsheetApp.getActiveSpreadsheet(), sh=ss.getSheetByName('Transfer_Cabang'), id='TRF-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);
+  sh.appendRow([id,new Date(),src,dst,'DRAFT',JSON.stringify(clean),actor.email,'','','',String(note||'')]);
+  return {status:'success',id_transfer:id,status_transfer:'DRAFT',items:clean,cabang_asal:src,cabang_tujuan:dst};
+}
+function mcTransferStep_(actorEmail, transferId, action) {
+  var actor=mcResolveActor_(actorEmail), ss=SpreadsheetApp.getActiveSpreadsheet(), sh=ss.getSheetByName('Transfer_Cabang');
+  var h=mcHeaders_(sh), last=sh.getLastRow(), rowNo=0, row=[];
+  if(last<2)throw Error('Transfer tidak ditemukan.');
+  var data=sh.getRange(2,1,last-1,sh.getLastColumn()).getValues();
+  for(var i=0;i<data.length;i++)if(String(data[i][h.id_transfer]||'')===String(transferId||'')){rowNo=i+2;row=data[i];break;}
+  if(!rowNo)throw Error('Transfer tidak ditemukan: '+transferId);
+  var src=String(row[h.cabang_asal]||'').trim().toUpperCase(), dst=String(row[h.cabang_tujuan]||'').trim().toUpperCase(), status=String(row[h.status]||''), items;
+  if(actor.role!=='OWNER'&&actor.role!=='ADMIN')throw Error('Hanya OWNER/ADMIN yang boleh memproses transfer.');
+  mcAssertBranch_(actor,action==='TERIMA'?dst:src);
+  try{items=JSON.parse(row[h.items_json]||'[]');}catch(e){throw Error('Daftar item transfer rusak.');}
+  if(action==='KIRIM'){
+    if(status==='SENT'||status==='RECEIVED')return {status:'success',duplicate:true,id_transfer:transferId,status_transfer:status};
+    if(status!=='DRAFT'&&status!=='SENDING')throw Error('Transfer tidak dapat dikirim dari status '+status);
+    sh.getRange(rowNo,h.status+1).setValue('SENDING');
+    items.forEach(function(x){mcApplyStockDelta_(src,x.id_barang,-Number(x.qty),'TRFSEND:'+transferId+':'+x.id_barang,'TRANSFER_KELUAR',transferId,actor.email);});
+    sh.getRange(rowNo,h.status+1).setValue('SENT');sh.getRange(rowNo,h.dikirim_pada+1).setValue(new Date());
+  } else if(action==='TERIMA'){
+    if(status==='RECEIVED')return {status:'success',duplicate:true,id_transfer:transferId,status_transfer:status};
+    if(status!=='SENT'&&status!=='RECEIVING')throw Error('Transfer belum dikirim atau status tidak valid: '+status);
+    sh.getRange(rowNo,h.status+1).setValue('RECEIVING');
+    items.forEach(function(x){mcApplyStockDelta_(dst,x.id_barang,Number(x.qty),'TRFRECV:'+transferId+':'+x.id_barang,'TRANSFER_MASUK',transferId,actor.email);});
+    sh.getRange(rowNo,h.status+1).setValue('RECEIVED');sh.getRange(rowNo,h.diterima_pada+1).setValue(new Date());sh.getRange(rowNo,h.diterima_oleh+1).setValue(actor.email);
+  } else throw Error('Aksi transfer tidak dikenal.');
+  return {status:'success',id_transfer:transferId,status_transfer:sh.getRange(rowNo,h.status+1).getValue()};
+}
+function mcSendTransfer(actorEmail, transferId) { return mcTransferStep_(actorEmail,transferId,'KIRIM'); }
+function mcReceiveTransfer(actorEmail, transferId) { return mcTransferStep_(actorEmail,transferId,'TERIMA'); }
