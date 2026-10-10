@@ -1648,7 +1648,7 @@ window.loadBarang = function(isLocalOnly = false) {
         if (typeof renderTabelBarang === 'function') renderTabelBarang(serverData);
         if (typeof renderPosProductList === 'function') renderPosProductList();
       }
-    }).getBarang();
+    }).getBarang(currentUser ? currentUser.id_cabang : "");
   }
 };
     
@@ -1792,7 +1792,7 @@ window.loadBarang = function(isLocalOnly = false) {
       data.forEach(function(item) {
         var tr = document.createElement("tr");
         var imgTag = item.gambar ? `<img src="${item.gambar}" class="img-thumb" onerror="this.onerror=null;this.src='https://via.placeholder.com/36?text=No+Img';">` : `<div class="img-thumb">No Img</div>`;
-        var safeId = String(item.id_barang ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var safeId = item.id_barang.replace(/'/g, "\\'");
         var isTidakAktif = item.status === 'Tidak Aktif';
         var statusBadge = isTidakAktif ? '<span style="color:#dc3545;font-weight:bold;">Tidak Aktif</span>' : '<span style="color:#198754;font-weight:bold;">Aktif</span>';
 
@@ -2005,7 +2005,7 @@ function loadPosKatalog() {
     globalDataBarang = data;
     renderPosSuppliers();
     renderPosProductList();
-  }).getBarang();
+  }).getBarang(currentUser ? currentUser.id_cabang : "");
 }
 
 // 2. Buat fungsi Render Supplier (Chips horizontal)
@@ -2086,7 +2086,7 @@ function renderPosProductList() {
   filtered.forEach(item => {
     let div = document.createElement("div");
     div.className = "pos-item-row";
-    div.onclick = function() { tambahKeKeranjang(item); };
+    div.onclick = function() { if ((Number(item.stok)||0) <= 0) { alert("Stok cabang ini kosong. Silakan cek Stok_Cabang atau lakukan migrasi stok setelah verifikasi backup."); return; } tambahKeKeranjang(item); };
     
     // Cek keranjang untuk menampilkan Lencana (Badge) Qty jika sudah dipilih
     let cartItem = keranjang.find(k => k.id_barang === item.id_barang);
@@ -3395,7 +3395,7 @@ function simpanEditItemModal() {
       event.preventDefault();
       var form = document.getElementById("formStokMasuk");
       var payload = {
-        id_barang: form.id_barang.value, qty_masuk: form.qty_masuk.value, keterangan: form.keterangan.value, petugas: currentUser ? currentUser.nama : 'Admin'
+        id_barang: form.id_barang.value, qty_masuk: form.qty_masuk.value, keterangan: form.keterangan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: currentUser ? currentUser.id_cabang : ''
       };
       google.script.run.withSuccessHandler(function(res) {
         alert(res); closeStokMasukModal(); loadStokMasuk();
@@ -3406,7 +3406,7 @@ function simpanEditItemModal() {
       event.preventDefault();
       var form = document.getElementById("formRetur");
       var payload = {
-        id_barang: form.id_barang.value, qty_retur: form.qty_retur.value, alasan: form.alasan.value, petugas: currentUser ? currentUser.nama : 'Admin'
+        id_barang: form.id_barang.value, qty_retur: form.qty_retur.value, alasan: form.alasan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: currentUser ? currentUser.id_cabang : ''
       };
       google.script.run.withSuccessHandler(function(res) {
         alert(res); closeReturModal(); loadReturBarang();
