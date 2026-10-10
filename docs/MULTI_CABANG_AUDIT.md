@@ -79,3 +79,11 @@ Yang sudah disiapkan di branch (belum dihubungkan ke endpoint produksi):
 5. Uji regresi data lama dan skenario akses lintas cabang, termasuk OWNER kosong cabang, ADMIN/USER per cabang, offline/retry, retur dan pembatalan.
 6. Bandingkan jumlah baris dan total stok sebelum/sesudah migrasi; simpan backup dan log rekonsiliasi.
 7. Baru setelah laporan pengujian dan migrasi disetujui, siapkan deployment GAS dan pembaruan URL; jangan mengganti URL produksi sebelum backend yang cocok benar-benar diterbitkan dan diuji.
+
+
+### Update implementasi kandidat — stok dan transfer
+
+- Kandidat backend kini memiliki fungsi mutasi stok dengan ID event untuk mencegah pengurangan/penambahan berulang saat retry, catatan status `PENDING/APPLIED`, dan `LockService` pada mutasi stok.
+- Alur transfer kandidat mencakup `DRAFT → SENDING → SENT → RECEIVING → RECEIVED`; pengiriman mengurangi stok cabang asal, penerimaan menambah stok cabang tujuan, dan setiap item memakai event ID idempoten.
+- Fungsi kandidat tetap **belum dipanggil oleh aplikasi** dan sengaja belum masuk allowlist endpoint. Alasan utamanya: API produksi saat ini belum mempunyai sesi bertanda tangan yang bisa membuktikan identitas request. Mengaktifkan transfer sebelum autentikasi dan pengujian retry selesai akan berisiko terhadap stok.
+- Verifikasi otomatis terhadap Google Sheets belum bisa dinyatakan lulus karena fungsi perlu diuji di salinan spreadsheet GAS. Sintaks kandidat juga perlu diperiksa dari editor GAS sebelum pengujian integrasi.
