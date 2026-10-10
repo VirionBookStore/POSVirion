@@ -47,3 +47,16 @@ Batasan: perubahan ini berada di branch kerja. Jangan merge/deploy ke produksi s
 Frontend: perubahan identitas cabang sudah diterapkan pada branch kerja.
 Backend/migrasi/pemisahan stok: belum diterapkan; belum aman menyatakan role cabang berfungsi penuh.
 Produksi: tidak diubah dan tidak di-deploy.
+
+
+## Update pekerjaan 10 Oktober 2026 — fondasi migrasi kandidat
+
+File baru: `backend/Code_POS_MultiCabang_Candidate.js`.
+
+Yang sudah disiapkan di branch (belum dihubungkan ke endpoint produksi):
+- Skema kandidat `Stok_Cabang`, `Mutasi_Stok_Cabang`, `Transfer_Cabang`, dan `Migrasi_Cabang_Log`.
+- Resolusi aktor dari sheet `User`; hanya role `OWNER` yang benar-benar tersimpan di server dan memiliki `id_cabang` kosong yang diperlakukan sebagai all-branch. Akun non-OWNER tanpa cabang ditolak.
+- Preview migrasi stok lama ke `TV002`, pemeriksaan ID barang duplikat/stok invalid, dan log status migrasi.
+- Runner migrasi dengan frasa konfirmasi eksplisit, backup sheet sumber sebelum menulis alokasi, verifikasi jumlah produk dan total stok; nilai stok master lama tidak dihapus.
+
+**Batasan penting:** ini fondasi migrasi, bukan perbaikan POS lengkap. File kandidat belum dimasukkan ke allowlist `doGet`/`doPost`, dan operasi penjualan, barang masuk, retur, koreksi, katalog/batch, dashboard/laporan, serta sinkronisasi offline belum dialihkan ke `Stok_Cabang`. Transfer antar-cabang baru memiliki skema, belum alur kirim/terima yang aktif. Jangan menjalankan runner di spreadsheet produksi. Langkah berikutnya adalah integrasi semua endpoint dan pengujian pada salinan spreadsheet, termasuk pencegahan transaksi ganda dan otorisasi server-side, baru kemudian rencana migrasi/deploy.
