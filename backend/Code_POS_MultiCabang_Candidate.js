@@ -108,7 +108,7 @@ function mcFindStockRow_(sheet, branchId, itemId) {
   }
   return {row:found,headers:h};
 }
-function mcApplyStockDelta_(branchId, itemId, delta, eventId, kind, reference, actorEmail) {
+function mcApplyStockDeltaUnlocked_(branchId, itemId, delta, eventId, kind, reference, actorEmail) {
   var actor=mcResolveActor_(actorEmail), branch=mcAssertBranch_(actor,branchId);
   var id=String(itemId||'').trim(), ev=String(eventId||'').trim(), d=Number(delta);
   if(!id||!ev||!isFinite(d)||d===0)throw Error('ID barang, ID event, dan perubahan stok valid wajib diisi.');
@@ -179,3 +179,9 @@ function mcTransferStep_(actorEmail, transferId, action) {
 }
 function mcSendTransfer(actorEmail, transferId) { return mcTransferStep_(actorEmail,transferId,'KIRIM'); }
 function mcReceiveTransfer(actorEmail, transferId) { return mcTransferStep_(actorEmail,transferId,'TERIMA'); }
+
+function mcApplyStockDelta_(branchId, itemId, delta, eventId, kind, reference, actorEmail) {
+  var lock=LockService.getScriptLock();lock.waitLock(30000);
+  try { return mcApplyStockDeltaUnlocked_(branchId,itemId,delta,eventId,kind,reference,actorEmail); }
+  finally { lock.releaseLock(); }
+}
