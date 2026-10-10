@@ -400,6 +400,7 @@
 
             <!-- Bagian Search & Scanner Retur -->
             <div class="pos-search-wrapper" style="background: #fff8f8;">
+              <select id="posPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="loadPosKatalog()"></select>
               <input type="text" id="searchReturPos" class="form-control pos-search-input" style="border-color: #dc3545 !important;" placeholder="Cari nama atau kode barang retur..." oninput="handleReturPosInput()" autocomplete="off">
               <button class="btn-scan-mobile" style="border-color: #dc3545; color: #dc3545;" onclick="toggleReturPosScanner()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3M9 9h6v6H9z"/></svg>
@@ -438,6 +439,8 @@
             <div class="dashboard-date-box">
               <label for="dashboardDate">Tanggal Penjualan</label>
               <div class="dashboard-date-row">
+                <select id="dashboardPilihCabang" class="form-control" style="display:none; width:auto;"></select>
+                <input type="date" id="dashboardDate" class="form-control">
                 <input type="date" id="dashboardDate" class="form-control">
                 <button class="btn btn-primary" onclick="loadDashboardByDate()" id="btnDashboardDate">Tampilkan</button>
               </div>
@@ -716,6 +719,7 @@
     
     <!-- Bagian Search & Scanner -->
     <div class="pos-search-wrapper">
+      <select id="posPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="loadPosKatalog()"></select>
       <input type="text" id="searchPosMobile" class="form-control pos-search-input" placeholder="Cari nama atau kode" oninput="handlePosSearchMobile()" autocomplete="off">
       <button class="btn-scan-mobile" onclick="togglePosScanner()">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3M9 9h6v6H9z"/></svg>
@@ -1703,6 +1707,23 @@ window.loadBarang = function(isLocalOnly = false) {
       google.script.run.withSuccessHandler(function(data) {
         globalPromoData = data;
       }).getPromoList();
+      if (isOwner()) {
+        google.script.run.withSuccessHandler(function(cabangs) {
+           let dashSelect = document.getElementById("dashboardPilihCabang");
+           let posSelect = document.getElementById("posPilihCabang");
+           
+           if(dashSelect) {
+             dashSelect.style.display = "block";
+             dashSelect.innerHTML = '<option value="">Semua Cabang (Global)</option>';
+             cabangs.forEach(c => dashSelect.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
+           }
+           if(posSelect) {
+             posSelect.style.display = "block";
+             posSelect.innerHTML = '<option value="">(Pilih Cabang Transaksi)</option>';
+             cabangs.forEach(c => posSelect.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
+           }
+        }).getCabang();
+      }
 
       const role = normalizeRole(currentUser && currentUser.role);
       const defaultMenu = role === 'USER' ? 'posKasir' : 'dashboard';
@@ -1741,6 +1762,10 @@ window.loadBarang = function(isLocalOnly = false) {
       var btn = document.getElementById('btnDashboardDate');
       var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
       if (!date) return alert('Silakan pilih tanggal penjualan terlebih dahulu.');
+      var branchId = "";
+      if (isOwner() && document.getElementById("dashboardPilihCabang")) {
+         branchId = document.getElementById("dashboardPilihCabang").value;
+      }
 
       if (btn) { btn.disabled = true; btn.innerText = 'Memuat...'; }
       if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
@@ -2024,6 +2049,9 @@ function loadPosKatalog() {
   }
 
   let branchId = currentUser ? currentUser.id_cabang : "";
+  if (isOwner() && document.getElementById("posPilihCabang")) {
+     branchId = document.getElementById("posPilihCabang").value;
+  }
   google.script.run.withSuccessHandler(function(data) {
     globalDataBarang = data;
     if (typeof initIndexedDB === 'function') {
@@ -2595,6 +2623,19 @@ function simpanEditItemModal() {
         newItem.subtotal = Math.max(0, newItem.subtotal - diskonGlobalItem);
         return newItem;
       });
+      let activeBranchId = currentUser ? currentUser.id_cabang : "";
+      let activeBranchName = currentUser ? currentUser.nama_cabang : "";
+      
+      if (isOwner() && document.getElementById("posPilihCabang") && document.getElementById("posPilihCabang").value) {
+         let sel = document.getElementById("posPilihCabang");
+         activeBranchId = sel.value;
+         activeBranchName = sel.options[sel.selectedIndex].text;
+      }
+
+      if (!activeBranchId) {
+         alert("Pilih Cabang terlebih dahulu sebelum memproses transaksi!");
+         return;
+      }
 
       lastTransaksi = {
          no_nota: noNotaSementara,
@@ -2616,8 +2657,8 @@ function simpanEditItemModal() {
         total_bayar: grandFinalBayar,
         metode_pembayaran: metode,
         kasir: lastTransaksi.kasir,
-        id_cabang: currentUser ? currentUser.id_cabang : '', // <-- Tambahkan baris ini
-        nama_cabang: currentUser ? currentUser.nama_cabang : '', // <-- Tambahkan baris ini
+        id_cabang: activeBranchId,      // <-- UBAH JADI INI
+        nama_cabang: activeBranchName,  // <-- UBAH JADI INI
         items: itemsToSave 
       };
 
