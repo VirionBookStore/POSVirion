@@ -1511,8 +1511,7 @@
           document.getElementById("userRole").innerText = currentUser.role;
           document.getElementById("userAvatar").src = currentUser.foto;
           
-          var cabangLabel = currentUser.nama_cabang ? " (" + currentUser.nama_cabang + ")" : "";
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + currentUser.nama + cabangLabel;
+          document.getElementById("cashierNameDisplay").innerText = getCashierIdentityLabel(currentUser);
           
           if(!applyRolePermissions()) return;
           initApp();
@@ -1603,9 +1602,7 @@
           document.getElementById("userRole").innerText = res.user.role;
           document.getElementById("userAvatar").src = res.user.foto;
           
-          // Tambahkan informasi cabang pada tampilan header jika diinginkan
-          var cabangLabel = res.user.nama_cabang ? " (" + res.user.nama_cabang + ")" : "";
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + res.user.nama + cabangLabel;
+          document.getElementById("cashierNameDisplay").innerText = getCashierIdentityLabel(res.user);
           
           if(!applyRolePermissions()) return;
           initApp();
@@ -1615,6 +1612,23 @@
           btn.disabled = false;
         }
       }).prosesLogin(email, password);
+    }
+
+    // OWNER dengan id_cabang kosong adalah akun lintas cabang.
+    // Akun non-OWNER tanpa id_cabang tetap diberi peringatan; akses wajib divalidasi backend.
+    function getCashierIdentityLabel(user) {
+      user = user || currentUser || {};
+      var nama = String(user.nama || 'Admin').trim();
+      var idCabang = String(user.id_cabang || user.idCabang || user.cabang_id || '').trim();
+      // Kompatibel dengan variasi nama properti yang mungkin dikirim backend lama.
+      var namaCabang = String(user.nama_cabang || user.namaCabang || user.cabang_nama || user.namaCabangAktif || '').trim();
+      var role = String(user.role || user.peran || '').trim().toUpperCase();
+      var isOwnerAllBranches = role === 'OWNER' && !idCabang;
+      var idLabel = idCabang
+        ? ' · ' + idCabang
+        : (isOwnerAllBranches ? ' · OWNER / SEMUA CABANG' : ' · ID CABANG BELUM DIATUR');
+      var namaLabel = namaCabang && namaCabang !== 'Cabang Utama' ? ' (' + namaCabang + ')' : '';
+      return 'Kasir: ' + nama + idLabel + namaLabel;
     }
 
     function logoutUser() {
@@ -2579,6 +2593,8 @@ function simpanEditItemModal() {
          metode: metode,
          items: itemsToSave,
          kasir: currentUser ? currentUser.nama : 'Admin',
+         id_cabang: currentUser ? String(currentUser.id_cabang || '').trim() : '',
+         nama_cabang: currentUser ? String(currentUser.nama_cabang || '').trim() : '',
          tanggal: new Date().toLocaleString("id-ID")
       };
 
@@ -2588,8 +2604,11 @@ function simpanEditItemModal() {
         total_bayar: grandFinalBayar,
         metode_pembayaran: metode,
         kasir: lastTransaksi.kasir,
-        id_cabang: currentUser ? currentUser.id_cabang : '', // <-- Tambahkan baris ini
-        nama_cabang: currentUser ? currentUser.nama_cabang : '', // <-- Tambahkan baris ini
+        // Simpan identitas cabang ke antrean offline agar tetap melekat saat sinkronisasi.
+        id_cabang: currentUser ? String(currentUser.id_cabang || '').trim() : '',
+        nama_cabang: currentUser ? String(currentUser.nama_cabang || '').trim() : '',
+        email_kasir: currentUser ? String(currentUser.email || '').trim().toLowerCase() : '',
+        role_kasir: currentUser ? String(currentUser.role || '').trim().toUpperCase() : '',
         items: itemsToSave 
       };
 
@@ -2618,7 +2637,11 @@ function simpanEditItemModal() {
        lastTransaksi = data;
        document.getElementById("strukTanggal").innerText = data.tanggal;
        document.getElementById("strukNoNota").innerText = data.no_nota;
-       document.getElementById("strukKasir").innerText = "Kasir: " + (data.kasir || 'Admin');
+       document.getElementById("strukKasir").innerText = getCashierIdentityLabel({
+         nama: data.kasir || 'Admin',
+         id_cabang: data.id_cabang || (currentUser && currentUser.id_cabang) || '',
+         nama_cabang: data.nama_cabang || (currentUser && currentUser.nama_cabang) || ''
+       });
        
        let itemHtml = "";
        let subKotor = 0;
@@ -4868,11 +4891,35 @@ function prosesCheckoutReturFinal() {
         function gasCall(fn, args) {
           return new Promise(function(resolve, reject) {
             if (!window.google || !google.script || !google.script.run) {
-              reject(new Error('Jembatan Google Apps Script tidak tersedia.'));
+              reject(new Error('Jembatan Google Apps Script tidak tersedia saat memanggil ' + fn + '. Pastikan halaman dibuka melalui deployment Web App GAS yang benar.'));
               return;
             }
-            let runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-            runner[fn].apply(runner, Array.isArray(args) ? args : []);
+            let settled = false;
+            const runner = google.script.run
+              .withSuccessHandler(function(result) {
+                if (settled) return;
+                settled = true;
+                resolve(result);
+              })
+              .withFailureHandler(function(err) {
+                if (settled) return;
+                settled = true;
+                const detail = err && err.message ? err.message : String(err || 'Kesalahan tidak diketahui');
+                reject(new Error(fn + ' gagal: ' + detail + '. Periksa deployment/izin GAS dan pastikan fungsi tersedia pada versi Web App aktif.'));
+              });
+            try {
+              if (typeof runner[fn] !== 'function') {
+                settled = true;
+                reject(new Error('Fungsi GAS ' + fn + ' tidak tersedia pada deployment aktif. Deploy versi backend yang sesuai terlebih dahulu.'));
+                return;
+              }
+              runner[fn].apply(runner, Array.isArray(args) ? args : []);
+            } catch (err) {
+              if (!settled) {
+                settled = true;
+                reject(new Error(fn + ' gagal dipanggil: ' + (err && err.message ? err.message : err)));
+              }
+            }
           });
         }
 
@@ -4897,7 +4944,8 @@ function prosesCheckoutReturFinal() {
           // 1) Master barang diambil per 1000 record agar aman untuk data besar.
           if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil jumlah master barang dari Google Sheets...</b>';
           const totalBarang = Number(await gasCall('getBarangTotalCount', [])) || 0;
-          await clearStore('masterBarang');
+          // Jangan hapus cache lama sebelum respons batch pertama valid diterima.
+          let masterStoreCleared = false;
 
           let receivedBarang = 0;
           let receivedUniqueBarang = 0;
@@ -4950,6 +4998,10 @@ function prosesCheckoutReturFinal() {
             if (!batch.length && offset < totalBarang) {
               throw new Error('Batch Master Barang kosong pada posisi '+offset+' padahal total sumber '+totalBarang+'. Pastikan versi Web App GAS yang berisi getBarangBatch sudah di-deploy ulang.');
             }
+            if (!masterStoreCleared) {
+              await clearStore('masterBarang');
+              masterStoreCleared = true;
+            }
 
             const validBatch = [];
             batch.forEach(function(item) {
@@ -4978,16 +5030,20 @@ function prosesCheckoutReturFinal() {
               (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
           }
 
-          // 2) Data lain tetap satu kali panggil karena ukurannya jauh lebih kecil.
-          for (let i=0; i<normalTasks.length; i++) {
-            const storeName = normalTasks[i][0];
-            const fnName = normalTasks[i][1];
-            if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron '+storeLabels[storeName]+'...</b>';
-            const data = await gasCall(fnName, []);
-            if (!Array.isArray(data)) throw new Error(storeLabels[storeName]+' dari GAS bukan array.');
-            const result = await replaceStore(storeName, data);
+          // 2) Ambil endpoint baca secara paralel untuk mengurangi waktu tunggu jaringan.
+          // Penulisan IndexedDB tetap berurutan per store agar mudah diverifikasi.
+          if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil data transaksi, stok, supplier, dan promo...</b>';
+          const fetchedTasks = await Promise.all(normalTasks.map(async function(task) {
+            const data = await gasCall(task[1], []);
+            if (!Array.isArray(data)) throw new Error(storeLabels[task[0]]+' dari GAS bukan array.');
+            return { storeName: task[0], data: data };
+          }));
+          for (let i=0; i<fetchedTasks.length; i++) {
+            const storeName = fetchedTasks[i].storeName;
+            if (txt) txt.innerHTML = '<b style="color:#087f8c;">Menyimpan '+storeLabels[storeName]+'...</b>';
+            const result = await replaceStore(storeName, fetchedTasks[i].data);
             if (result.skipped) throw new Error(storeLabels[storeName]+': '+result.skipped+' record tidak memiliki key yang valid.');
-            const pct = 70 + Math.round((i+1) / normalTasks.length * 25);
+            const pct = 70 + Math.round((i+1) / fetchedTasks.length * 25);
             if (btn) btn.innerText = '⏳ '+Math.min(95,pct)+'%';
           }
 
@@ -5056,8 +5112,9 @@ function prosesCheckoutReturFinal() {
             btn.innerText = '❌ Sinkronisasi Gagal';
             btn.style.backgroundColor = '#dc3545';
           }
-          if (txt) txt.innerHTML = '<span style="color:#dc3545;"><b>Sinkronisasi gagal:</b> '+String(err && err.message ? err.message : err)+'</span>';
-          if (!autoMode) alert('Gagal Sinkronisasi:\n\n' + (err && err.message ? err.message : err));
+          const syncError = String(err && err.message ? err.message : err);
+          if (txt) txt.innerHTML = '<span style="color:#dc3545;"><b>Sinkronisasi gagal:</b> '+syncError.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span><br><span style="color:#64748b;">Data lokal yang sudah tersimpan tidak sengaja dihapus oleh pesan error ini. Periksa koneksi dan versi Web App GAS, lalu coba ulang.</span>';
+          if (!autoMode) alert('Gagal Sinkronisasi:\n\n' + syncError);
           setTimeout(function(){ if(btn){ btn.innerText='🔄 Sinkronkan Data'; btn.style.backgroundColor=''; btn.style.borderColor=''; } },3000);
         }
       });
