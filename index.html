@@ -265,6 +265,7 @@
       .dashboard-secondary-stats { grid-template-columns:1fr 1fr; gap:9px; }
     }
   </style>
+<meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
 </head>
 <body>
 
@@ -1792,7 +1793,7 @@ window.loadBarang = function(isLocalOnly = false) {
       data.forEach(function(item) {
         var tr = document.createElement("tr");
         var imgTag = item.gambar ? `<img src="${item.gambar}" class="img-thumb" onerror="this.onerror=null;this.src='https://via.placeholder.com/36?text=No+Img';">` : `<div class="img-thumb">No Img</div>`;
-        var safeId = String(item.id_barang ?? '').replace(/'/g, "\\'");
+        var safeId = String(item.id_barang ?? '')
         var isTidakAktif = item.status === 'Tidak Aktif';
         var statusBadge = isTidakAktif ? '<span style="color:#dc3545;font-weight:bold;">Tidak Aktif</span>' : '<span style="color:#198754;font-weight:bold;">Aktif</span>';
 
@@ -2645,13 +2646,8 @@ function simpanEditItemModal() {
        let totBayar = Number(data.total_bayar !== undefined ? data.total_bayar : data.total) || 0;
        let bayarUang = Number(data.bayar) || totBayar;
        let kembaliUang = Number(data.kembali) || (bayarUang - totBayar);
-       // Subtotal setiap item di struk sudah dipotong diskon global yang
-       // dialokasikan proporsional saat konfirmasi pembayaran. Karena itu,
-       // totDiscItem sudah mencakup diskon item + diskon global.
-       // Jangan tambahkan data.diskonGlobal lagi karena akan menggandakan diskon.
-       let totalDiscAll = (data.totalDiskonItem !== undefined && data.totalDiskonItem !== null)
-         ? (Number(data.totalDiskonItem) || 0)
-         : totDiscItem;
+       let discGlobalVal = Number(data.diskonGlobal) || 0;
+       let totalDiscAll = totDiscItem + discGlobalVal;
 
        document.getElementById("strukSubtotal").innerText = "Rp " + (subKotor > 0 ? subKotor : totBayar).toLocaleString('id-ID');
        document.getElementById("strukDiskon").innerText = "- Rp " + totalDiscAll.toLocaleString('id-ID');
@@ -3400,7 +3396,7 @@ function simpanEditItemModal() {
       event.preventDefault();
       var form = document.getElementById("formStokMasuk");
       var payload = {
-        id_barang: form.id_barang.value, qty_masuk: form.qty_masuk.value, keterangan: form.keterangan.value, petugas: currentUser ? currentUser.nama : 'Admin'
+        id_barang: form.id_barang.value, qty_masuk: form.qty_masuk.value, keterangan: form.keterangan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: currentUser ? currentUser.id_cabang : ''
       };
       google.script.run.withSuccessHandler(function(res) {
         alert(res); closeStokMasukModal(); loadStokMasuk();
@@ -3411,7 +3407,7 @@ function simpanEditItemModal() {
       event.preventDefault();
       var form = document.getElementById("formRetur");
       var payload = {
-        id_barang: form.id_barang.value, qty_retur: form.qty_retur.value, alasan: form.alasan.value, petugas: currentUser ? currentUser.nama : 'Admin'
+        id_barang: form.id_barang.value, qty_retur: form.qty_retur.value, alasan: form.alasan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: currentUser ? currentUser.id_cabang : ''
       };
       google.script.run.withSuccessHandler(function(res) {
         alert(res); closeReturModal(); loadReturBarang();
@@ -3457,7 +3453,7 @@ function simpanEditItemModal() {
             btn.disabled = false;
             closeImportMasukModal();
             loadStokMasuk();
-          }).importStokMasukExcel(processedRows, petugasNama);
+          }).importStokMasukExcel(processedRows, petugasNama, currentUser ? currentUser.id_cabang : "");
         } catch (err) {
           alert("Gagal: " + err.message);
           btn.innerText = "Proses Import Masuk";
@@ -3506,7 +3502,7 @@ function simpanEditItemModal() {
             btn.disabled = false;
             closeImportReturModal();
             loadReturBarang();
-          }).importReturBarangExcel(processedRows, petugasNama);
+          }).importReturBarangExcel(processedRows, petugasNama, currentUser ? currentUser.id_cabang : "");
         } catch (err) {
           alert("Gagal: " + err.message);
           btn.innerText = "Proses Import Retur";
