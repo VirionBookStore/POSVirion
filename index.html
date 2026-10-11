@@ -227,6 +227,7 @@
       
       /* Sidebar Sembunyi di Kiri */
       .sidebar {
+        padding-bottom: 80px;
         position: fixed;
         left: -300px; /* Sembunyikan total */
         top: 0;
@@ -400,7 +401,7 @@
 
             <!-- Bagian Search & Scanner Retur -->
             <div class="pos-search-wrapper" style="background: #fff8f8;">
-              <select id="posPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="loadPosKatalog()"></select>
+              <select id="returPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="initReturPos()"></select>
               <input type="text" id="searchReturPos" class="form-control pos-search-input" style="border-color: #dc3545 !important;" placeholder="Cari nama atau kode barang retur..." oninput="handleReturPosInput()" autocomplete="off">
               <button class="btn-scan-mobile" style="border-color: #dc3545; color: #dc3545;" onclick="toggleReturPosScanner()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3M9 9h6v6H9z"/></svg>
@@ -550,7 +551,7 @@
                     <th>Kode / ID</th>
                     <th>Supplier</th>
                     <th style="white-space: normal; min-width: 150px;">Nama Barang</th>
-                    <th>Kategori</th>
+                    <th>ID Cabang</th>
                     <th>H. Jual</th>
                     <th>H. Beli</th>
                     <th>Stok</th>
@@ -786,6 +787,10 @@
                 <input type="text" id="searchRiwayatInput" class="search-box" placeholder="Cari Nota, Kasir..." oninput="filterRiwayatTransaksi()" style="width:min(260px, 100%); padding:7px 10px; font-size:12px;">
               </div>
               <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+                <div>
+                  <label style="display:block; font-size:12px; margin-bottom:4px;">Cabang</label>
+                  <select id="filterRiwayatCabang" class="form-control" onchange="filterRiwayatTransaksi()" style="display:none; min-width:145px;"></select>
+                </div>
                 <div><label for="filterRiwayatStart" style="display:block; font-size:12px; margin-bottom:4px;">Dari Tanggal</label><input type="date" id="filterRiwayatStart" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
                 <div><label for="filterRiwayatEnd" style="display:block; font-size:12px; margin-bottom:4px;">Sampai Tanggal</label><input type="date" id="filterRiwayatEnd" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
                 <button type="button" class="btn btn-outline btn-sm" onclick="resetFilterRiwayat()">Reset Filter</button>
@@ -1395,7 +1400,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbygte0eqApepkCfVizoVHLQLc1fYfmPbkp9-WVlSGEBe_CSQeNuFjzTHHslIslDeu4/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxPnCN4Q7OuyCm7D9Dgn-wwM5FB8tg0oASoDMLBYoKAcdwi9gOzF2ify6wp-0OxuO8/exec"
     };
 
     (function installGasBridge() {
@@ -1683,6 +1688,7 @@ window.loadBarang = function(isLocalOnly = false) {
       document.getElementById('sec-' + menuId).classList.add('active');
 
       if (menuId === 'masterBarang') loadBarang();
+      if (menuId === 'cabang') loadCabang();
       if (menuId === 'supplier') loadSupplier();
       if (menuId === 'promoManajemen') loadPromoManajemen();
       if (menuId === 'stokMasuk') loadStokMasuk();
@@ -1711,23 +1717,24 @@ window.loadBarang = function(isLocalOnly = false) {
 
       // --- GENERATE FILTER CABANG KHUSUS OWNER ---
       if (isOwner()) {
-        google.script.run.withSuccessHandler(function(cabangs) {
-           // Fungsi bantu pemasang dropdown
-           const pasangDropdown = (idElement, teksAwal) => {
-             let el = document.getElementById(idElement);
-             if(el) {
-               el.style.display = "inline-block";
-               el.innerHTML = `<option value="">${teksAwal}</option>`;
-               cabangs.forEach(c => el.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
-             }
-           };
-           
-           // Pasang ke Dashboard & Kasir
-           pasangDropdown("dashboardPilihCabang", "Semua Cabang (Global)");
-           pasangDropdown("posPilihCabang", "(Pilih Cabang Transaksi)");
-           
-        }).getCabang();
-      }
+     google.script.run.withSuccessHandler(function(cabangs) {
+        const pasangDropdown = (idElement, teksAwal) => {
+          let el = document.getElementById(idElement);
+          if(el) {
+            el.style.display = "inline-block";
+            el.innerHTML = `<option value="">${teksAwal}</option>`;
+            cabangs.forEach(c => el.innerHTML += `<option value="${c.id_cabang}">${c.nama_cabang}</option>`);
+          }
+        };
+        pasangDropdown("dashboardPilihCabang", "Semua Cabang (Global)");
+        pasangDropdown("posPilihCabang", "-- Pilih Cabang Transaksi --");
+        pasangDropdown("returPilihCabang", "-- Pilih Cabang Retur --");
+        pasangDropdown("filterRiwayatCabang", "Semua Cabang"); // UI Baru
+        pasangDropdown("filterBarangCabang", "Semua Cabang"); // UI Baru
+        pasangDropdown("filterMasukCabang", "Semua Cabang"); // UI Baru
+        pasangDropdown("filterReturCabang", "Semua Cabang"); // UI Baru
+     }).getCabang();
+   }
       // -------------------------------------------
 
       const role = normalizeRole(currentUser && currentUser.role);
@@ -1815,7 +1822,7 @@ window.loadBarang = function(isLocalOnly = false) {
           if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
           alert('Gagal memuat Dashboard: ' + (err && err.message ? err.message : err));
         })
-        .getDashboardData(date, date);
+        .getDashboardData(date, date, branchId);
     }
 
     function loadCabang() {
@@ -2079,6 +2086,11 @@ function loadPosKatalog() {
   let branchId = currentUser ? currentUser.id_cabang : "";
   if (isOwner() && document.getElementById("posPilihCabang")) {
      branchId = document.getElementById("posPilihCabang").value;
+  }
+  // <-- TAMBAHKAN BLOK INI: Wajib pilih cabang untuk owner
+  if (isOwner() && !branchId) {
+     document.getElementById("posProductList").innerHTML = `<div style="text-align:center; padding:20px; color:#dc3545; font-size:14px; font-weight:bold;">Silakan pilih cabang transaksi terlebih dahulu dari menu di atas.</div>`;
+     return; 
   }
   google.script.run.withSuccessHandler(function(data) {
     globalDataBarang = data;
@@ -2785,6 +2797,10 @@ function simpanEditItemModal() {
     }
 
     function loadRiwayat() {
+      var todayStr = new Date().toISOString().split('T')[0];
+  document.getElementById("filterRiwayatStart").value = todayStr;
+  document.getElementById("filterRiwayatEnd").value = todayStr;
+    
       google.script.run.withSuccessHandler(function(data) {
         globalRiwayatData = Array.isArray(data) ? data : [];
         filterRiwayatTransaksi();
@@ -2873,14 +2889,26 @@ function simpanEditItemModal() {
       var searchEl = document.getElementById('searchRiwayatInput');
       var startEl = document.getElementById('filterRiwayatStart');
       var endEl = document.getElementById('filterRiwayatEnd');
+      
+      // 1. TAMBAHKAN PENGECEKAN ELEMEN DROPDOWN CABANG DI SINI
+      var branchEl = document.getElementById('filterRiwayatCabang');
+      var branchId = branchEl && branchEl.style.display !== 'none' ? branchEl.value : '';
+      // =======================================================
+
       var keyword = String(searchEl && searchEl.value || '').toLowerCase().trim();
       var start = String(startEl && startEl.value || '');
       var end = String(endEl && endEl.value || '');
+      
       var filtered = globalRiwayatData.filter(function(r) {
         var matchKeyword = String(r.no_nota || '').toLowerCase().includes(keyword) ||
           String(r.kasir || '').toLowerCase().includes(keyword) ||
           String(r.supplier || '').toLowerCase().includes(keyword);
         if (!matchKeyword) return false;
+        
+        // 2. TAMBAHKAN LOGIKA FILTER CABANG DI SINI
+        if (branchId && r.id_cabang !== branchId) return false;
+        // ===================================================
+
         var key = tanggalKeKunci(r.tanggal);
         if (start && (!key || key < start)) return false;
         if (end && (!key || key > end)) return false;
@@ -4028,13 +4056,26 @@ let html5QrCodeReturPos = null;
 let isReturPosScanning = false;
 
 function initReturPos() {
-  keranjangRetur = [];
-  currentReturMode = 'retur';
-  currentReturSupplier = "Semua";
-  updateModeReturUI();
-  renderReturSuppliers();
-  renderReturProductList();
-  renderKeranjangRetur();
+  let branchId = currentUser ? currentUser.id_cabang : "";
+  if (isOwner() && document.getElementById("returPilihCabang")) {
+     branchId = document.getElementById("returPilihCabang").value;
+  }
+
+  if (isOwner() && !branchId) {
+     document.getElementById("returProductList").innerHTML = `<div style="text-align:center; padding:20px; color:#dc3545; font-size:14px; font-weight:bold;">Silakan pilih cabang terlebih dahulu.</div>`;
+     return;
+  }
+
+  google.script.run.withSuccessHandler(function(data) {
+    globalDataBarang = data;
+    keranjangRetur = [];
+    currentReturMode = 'retur';
+    currentReturSupplier = "Semua";
+    updateModeReturUI();
+    renderReturSuppliers();
+    renderReturProductList();
+    renderKeranjangRetur();
+  }).getBarang(branchId);
 }
 
 function setReturMode(mode) {
