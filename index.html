@@ -5223,6 +5223,18 @@ function prosesCheckoutReturFinal() {
           }
 
           asposSyncInProgress = false;
+
+          // Sinkronisasi data master dan pengiriman antrean transaksi adalah dua proses berbeda.
+          // Setelah pengambilan data berhasil, coba kirim transaksi lokal yang masih PENDING.
+          // Antrean hanya akan hilang jika GAS mengembalikan nomor nota server yang valid.
+          Promise.resolve()
+            .then(function() { return syncPendingTransactions(); })
+            .then(function() { updateOfflineTransactionStatus(); })
+            .catch(function(err) {
+              console.warn('[AS-Pos] Pengiriman antrean transaksi setelah sinkronisasi data gagal:', err);
+              updateOfflineTransactionStatus();
+            });
+
           setTimeout(function(){
             if (btn) {
               btn.disabled = false;
