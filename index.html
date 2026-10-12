@@ -4951,15 +4951,15 @@ function prosesCheckoutReturFinal() {
                 'Percobaan kirim: ' + String(item.retryCount || 0),
                 'Status: ' + String(item.status || 'PENDING'),
                 'Penyebab terakhir: ' + String(item.lastError || 'Belum ada pesan error tersimpan.')
-              ].join('\\n');
+              ].join('\n');
               alert(detail);
 
               // Pembersihan dibatasi pada satu transaksi percobaan yang telah dikonfirmasi user.
               // Tidak pernah menghapus antrean transaksi lain.
               if (String(item.no_nota || '') === 'LOCAL-684745286-4SV0JP06') {
                 const removeTest = confirm(
-                  'Transaksi ini sudah dikonfirmasi sebagai transaksi percobaan.\\n\\n' +
-                  'Hapus hanya antrean lokal dan riwayat lokal transaksi ini?\\n' +
+                  'Transaksi ini sudah dikonfirmasi sebagai transaksi percobaan.\n\n' +
+                  'Hapus hanya antrean lokal dan riwayat lokal transaksi ini?\n' +
                   'Tindakan ini tidak menghapus data di Google Sheets.'
                 );
                 if (removeTest) {
