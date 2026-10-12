@@ -320,6 +320,7 @@
         
         
         <div class="sidebar-section">Sistem</div>
+        <li id="menuPendingOwner" style="display:none;"><a href="#" onclick="switchMenu('dataPendingOwner', this)">⏳ Data Pending</a></li>
         <li><a href="#" onclick="openLogoModal()">⚙️ Pengaturan Logo</a></li>
         <li><a href="#" onclick="switchMenu('manajemenData', this)">💾 Sinkronisasi & Backup</a></li> <!-- MENU BARU -->
       </ul>
@@ -349,6 +350,24 @@
       </div>
 
       <div class="content-body">
+
+        <!-- DATA PENDING: OWNER ONLY -->
+        <div id="sec-dataPendingOwner" class="page-section">
+          <div class="card">
+            <div class="card-header">Manajemen Data Pending <span style="font-size:12px;color:#64748b;font-weight:600;">Khusus Owner</span></div>
+            <div class="card-body">
+              <p style="font-size:13px;color:#475569;">Periksa transaksi lokal yang gagal dikirim ke Google Sheets. Owner dapat menghapus seluruh transaksi percobaan atau mengeluarkan satu barang bermasalah dari transaksi pending. Perubahan hanya dilakukan pada antrean lokal perangkat ini.</p>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                <button class="btn btn-outline" onclick="loadPendingOwnerData()">🔄 Muat Ulang</button>
+                <span id="pendingOwnerSummary" style="font-size:13px;color:#64748b;align-self:center;">Memuat antrean...</span>
+              </div>
+              <div id="pendingOwnerList"><p>Memuat data pending...</p></div>
+              <div style="margin-top:14px;padding:12px;border:1px solid #f59e0b;background:#fffbeb;border-radius:8px;font-size:12px;color:#92400e;">
+                Penting: menghapus antrean lokal tidak menghapus transaksi yang mungkin sudah masuk ke Google Sheets. Pastikan transaksi memang percobaan atau cek sheet penjualan terlebih dahulu. Menghapus item dari antrean juga tidak mengubah master barang atau stok server.
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- MANAJEMEN DATA & BACKUP -->
 <div id="sec-manajemenData" class="page-section">
@@ -1563,7 +1582,7 @@
 
     /* AS-POS ROLE: OWNER / ADMIN / USER */
     const AS_POS_ROLE_PERMISSIONS = {
-      OWNER:{menus:['dashboard','masterBarang','supplier','cabang','promoManajemen','posKasir','returPos','riwayatPenjualan','riwayatPerBarang','stokMasuk','returBarang','manajemenData']},
+      OWNER:{menus:['dashboard','masterBarang','supplier','cabang','promoManajemen','posKasir','returPos','riwayatPenjualan','riwayatPerBarang','stokMasuk','returBarang','manajemenData','dataPendingOwner']},
       ADMIN:{menus:['dashboard','masterBarang','cabang','promoManajemen','posKasir','returPos','stokMasuk','returBarang','manajemenData']},
       USER:{menus:['masterBarang','posKasir','stokMasuk','returBarang','manajemenData']}
     };
@@ -1583,6 +1602,8 @@
       });
       const logoMenu=Array.from(document.querySelectorAll('.sidebar-menu li')).find(li=>/Pengaturan Logo/i.test(li.textContent||''));
       if(logoMenu)logoMenu.style.display=isOwner()?'':'none';
+      const pendingMenu=document.getElementById('menuPendingOwner');
+      if(pendingMenu)pendingMenu.style.display=isOwner()?'':'none';
       // Pastikan halaman yang aktif juga mengikuti role. Ini penting karena
       // Dashboard memiliki class "active" dari HTML awal dan sebelumnya bisa
       // tampil sesaat untuk USER walaupun menu Dashboard sudah disembunyikan.
@@ -4990,6 +5011,130 @@ function prosesCheckoutReturFinal() {
         }).catch(function(){});
       });
     }
+
+    // ============================================================
+    // OWNER: MANAJEMEN ANTREAN TRANSAKSI PENDING
+    // ============================================================
+    function restoreLocalStockForPendingItems(items) {
+      return getAllFromStore('masterBarang').then(function(rows) {
+        const qtyById = {};
+        (items || []).forEach(function(item) {
+          const id = String(item.id_barang || '').trim();
+          const qty = Number(item.qty) || 0;
+          if (id && qty > 0) qtyById[id] = (qtyById[id] || 0) + qty;
+        });
+        rows.forEach(function(row) {
+          const id = String(row.id_barang || '').trim();
+          if (qtyById[id]) row.stok = (Number(row.stok) || 0) + qtyById[id];
+        });
+        return replaceStore('masterBarang', rows);
+      });
+    }
+
+    function formatPendingMoney(value) {
+      return 'Rp ' + (Number(value) || 0).toLocaleString('id-ID');
+    }
+
+    window.loadPendingOwnerData = function() {
+      const listEl = document.getElementById('pendingOwnerList');
+      const summaryEl = document.getElementById('pendingOwnerSummary');
+      if (!isOwner()) {
+        if (listEl) listEl.innerHTML = '<p style="color:#dc3545;">Akses khusus Owner.</p>';
+        return;
+      }
+      if (listEl) listEl.innerHTML = '<p>Memuat antrean transaksi...</p>';
+      initIndexedDB(function(ok) {
+        if (!ok || !db) {
+          if (listEl) listEl.innerHTML = '<p style="color:#dc3545;">Database lokal tidak dapat dibuka.</p>';
+          return;
+        }
+        getAllFromStore('pendingTransactions').then(function(list) {
+          list.sort(function(a,b) { return String(a.createdAt || '').localeCompare(String(b.createdAt || '')); });
+          if (summaryEl) summaryEl.innerText = list.length + ' transaksi pending di perangkat ini';
+          if (!list.length) {
+            if (listEl) listEl.innerHTML = '<div style="padding:16px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;color:#166534;">Tidak ada transaksi pending. Antrean lokal sudah kosong.</div>';
+            updateOfflineTransactionStatus();
+            return;
+          }
+          if (!listEl) return;
+          listEl.innerHTML = list.map(function(tx) {
+            const items = Array.isArray(tx.payload && tx.payload.items) ? tx.payload.items : [];
+            const itemRows = items.map(function(item, idx) {
+              const label = String(item.nama_barang || item.name || item.id_barang || 'Barang tanpa nama');
+              const id = String(item.id_barang || '-');
+              return '<tr><td>' + (idx+1) + '</td><td>' + label.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}) + '<br><small>ID: ' + id.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}) + '</small></td><td>' + (Number(item.qty)||0) + '</td><td>' + formatPendingMoney(item.subtotal !== undefined ? item.subtotal : (Number(item.harga_jual||item.harga_satuan)||0)*(Number(item.qty)||0)) + '</td><td><button class="btn btn-outline" style="padding:5px 8px;font-size:11px;" onclick="ownerRemovePendingItem(\'' + String(tx.clientTransactionId).replace(/'/g,'') + '\',' + idx + ')">Hapus item ini</button></td></tr>';
+            }).join('');
+            const safeNo = String(tx.no_nota || tx.clientTransactionId || '-').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
+            const safeError = String(tx.lastError || 'Belum ada detail error.').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
+            return '<div style="border:1px solid #dbe2ea;border-radius:10px;padding:14px;margin-bottom:14px;">' +
+              '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div><b>Nota lokal: ' + safeNo + '</b><div style="font-size:12px;color:#64748b;margin-top:4px;">Cabang: ' + String((tx.payload||{}).id_cabang || '-') + ' • Dibuat: ' + String(tx.createdAt || '-') + '</div></div><span style="font-size:12px;color:#b45309;font-weight:700;">PENDING • Percobaan ' + (Number(tx.retryCount)||0) + '</span></div>' +
+              '<div style="font-size:12px;color:#b91c1c;margin:8px 0;">Penyebab terakhir: ' + safeError + '</div>' +
+              '<div style="overflow-x:auto;"><table class="table" style="min-width:650px;"><thead><tr><th>No</th><th>Barang</th><th>Qty</th><th>Subtotal</th><th>Tindakan</th></tr></thead><tbody>' + (itemRows || '<tr><td colspan="5">Tidak ada detail barang.</td></tr>') + '</tbody></table></div>' +
+              '<button class="btn btn-danger" style="margin-top:10px;" onclick="ownerDeletePendingTransaction(\'' + String(tx.clientTransactionId).replace(/'/g,'') + '\')">Hapus seluruh transaksi pending</button>' +
+              '</div>';
+          }).join('');
+        }).catch(function(err) {
+          if (listEl) listEl.innerHTML = '<p style="color:#dc3545;">Gagal membaca antrean: ' + String(err && err.message || err) + '</p>';
+        });
+      });
+    };
+
+    window.ownerDeletePendingTransaction = async function(clientId) {
+      if (!isOwner()) { alert('Tindakan ini hanya untuk Owner.'); return; }
+      const item = await getStoreItem('pendingTransactions', clientId);
+      if (!item) { alert('Transaksi pending tidak ditemukan.'); loadPendingOwnerData(); return; }
+      const ok = confirm('Hapus seluruh antrean lokal untuk ' + String(item.no_nota || clientId) + '?\\n\\nStok lokal akan dikembalikan sesuai jumlah item. Ini tidak menghapus data di Google Sheets. Pastikan transaksi tidak sudah tercatat di server.');
+      if (!ok) return;
+      try {
+        await restoreLocalStockForPendingItems((item.payload || {}).items || []);
+        await deleteStoreItem('pendingTransactions', clientId);
+        await deleteStoreItem('riwayatPenjualan', item.no_nota);
+        updateOfflineTransactionStatus();
+        loadPendingOwnerData();
+        alert('Antrean lokal dihapus dan stok lokal dikembalikan. Periksa Google Sheets untuk memastikan tidak ada transaksi server yang perlu dikoreksi.');
+      } catch(err) {
+        alert('Gagal menghapus antrean: ' + String(err && err.message || err));
+      }
+    };
+
+    window.ownerRemovePendingItem = async function(clientId, itemIndex) {
+      if (!isOwner()) { alert('Tindakan ini hanya untuk Owner.'); return; }
+      const tx = await getStoreItem('pendingTransactions', clientId);
+      if (!tx) { alert('Transaksi pending tidak ditemukan.'); loadPendingOwnerData(); return; }
+      const items = Array.isArray(tx.payload && tx.payload.items) ? tx.payload.items.slice() : [];
+      if (itemIndex < 0 || itemIndex >= items.length) { alert('Item tidak ditemukan.'); return; }
+      if (items.length <= 1) {
+        alert('Ini item terakhir. Gunakan tombol Hapus seluruh transaksi pending agar stok lokal dipulihkan dengan benar.');
+        return;
+      }
+      const removed = items[itemIndex];
+      const label = String(removed.nama_barang || removed.id_barang || 'barang ini');
+      if (!confirm('Keluarkan ' + label + ' dari antrean transaksi ' + String(tx.no_nota || clientId) + '?\\n\\nQty barang ini akan dikembalikan ke stok lokal. Total transaksi akan dihitung ulang dari subtotal item yang tersisa. Data Google Sheets tidak diubah.')) return;
+      try {
+        await restoreLocalStockForPendingItems([removed]);
+        items.splice(itemIndex, 1);
+        tx.payload.items = items;
+        tx.payload.total_item = items.reduce(function(sum,it){ return sum + (Number(it.qty)||0); },0);
+        tx.payload.total_bayar = items.reduce(function(sum,it){ return sum + (Number(it.subtotal !== undefined ? it.subtotal : (Number(it.harga_jual||it.harga_satuan)||0)*(Number(it.qty)||0))||0); },0);
+        tx.displayData = tx.displayData || {};
+        tx.displayData.items = items.map(function(it){ return Object.assign({},it); });
+        tx.displayData.total = tx.payload.total_bayar;
+        tx.displayData.bayar = tx.payload.total_bayar;
+        await putStore('pendingTransactions', tx);
+        const history = await getStoreItem('riwayatPenjualan', tx.no_nota);
+        if (history) {
+          history.items = tx.displayData.items;
+          history.total = tx.displayData.total;
+          history.bayar = tx.displayData.bayar;
+          await putStore('riwayatPenjualan', history);
+        }
+        updateOfflineTransactionStatus();
+        loadPendingOwnerData();
+        alert('Item dikeluarkan dari antrean. Periksa kembali barang, jumlah, dan total sebelum mencoba sinkronisasi ulang.');
+      } catch(err) {
+        alert('Gagal mengubah transaksi pending: ' + String(err && err.message || err));
+      }
+    };
 
     window.addEventListener('online', function() {
       updateOfflineTransactionStatus();
