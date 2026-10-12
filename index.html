@@ -5203,6 +5203,7 @@ function prosesCheckoutReturFinal() {
             hour:'2-digit', minute:'2-digit', second:'2-digit'
           }).replace(/:/g,'.');
           localStorage.setItem('aspos_last_sync', timeString);
+          localStorage.setItem('aspos_last_sync_epoch', String(Date.now()));
 
           if (btn) {
             btn.innerText = '✅ 100% Selesai';
@@ -5245,16 +5246,30 @@ function prosesCheckoutReturFinal() {
       });
     };
 
-    // Sinkronisasi otomatis: cek data dari GAS saat aplikasi aktif dan setiap 15 menit.
-    // Sinkronisasi manual tetap tersedia dan tetap menjadi pilihan untuk update segera.
+    // Sinkronisasi otomatis maksimal setiap 1 jam.
+    // Sinkronisasi manual tetap tersedia untuk mengambil perubahan barang kapan saja.
     (function setupAutoSync() {
-      const AUTO_SYNC_INTERVAL = 15 * 60 * 1000;
+      const AUTO_SYNC_INTERVAL = 60 * 60 * 1000;
+      const CHECK_INTERVAL = 60 * 1000;
       let autoSyncRunning = false;
 
-      window.asposAutoSyncNow = function() {
+      // Migrasi ringan: jika versi lama sudah pernah sinkron, jangan langsung mengulang
+      // hanya karena penanda waktu presisi belum tersedia.
+      const savedEpoch = Number(localStorage.getItem('aspos_last_sync_epoch') || 0);
+      if (!savedEpoch && localStorage.getItem('aspos_last_sync')) {
+        localStorage.setItem('aspos_last_sync_epoch', String(Date.now()));
+      }
+
+      window.asposAutoSyncNow = function(force) {
         if (autoSyncRunning) return;
         if (document.hidden) return;
         if (typeof window.syncAllDataManual !== 'function') return;
+
+        const lastSyncEpoch = Number(localStorage.getItem('aspos_last_sync_epoch') || 0);
+        const hasPreviousSync = !!localStorage.getItem('aspos_last_sync');
+        // Jangan tarik data berulang saat tab kembali aktif; tunggu sampai 1 jam.
+        // Sinkronisasi awal hanya dilakukan bila perangkat belum pernah berhasil sinkron.
+        if (!force && hasPreviousSync && lastSyncEpoch && (Date.now() - lastSyncEpoch < AUTO_SYNC_INTERVAL)) return;
 
         autoSyncRunning = true;
         Promise.resolve()
@@ -5267,20 +5282,18 @@ function prosesCheckoutReturFinal() {
           });
       };
 
-      // Beri waktu halaman/login selesai dimuat sebelum sinkronisasi pertama.
+      // Jika belum pernah berhasil sinkron, lakukan satu sinkronisasi awal setelah halaman siap.
       setTimeout(function() {
-        if (!document.hidden) window.asposAutoSyncNow();
+        if (!localStorage.getItem('aspos_last_sync')) window.asposAutoSyncNow();
       }, 60000);
 
+      // Pemeriksaan ringan tiap menit; pengambilan data hanya dilakukan setelah 1 jam.
       setInterval(function() {
         if (!document.hidden) window.asposAutoSyncNow();
-      }, AUTO_SYNC_INTERVAL);
+      }, CHECK_INTERVAL);
 
       document.addEventListener('visibilitychange', function() {
-        if (!document.hidden) {
-          // Saat kembali ke aplikasi setelah lama ditinggalkan, cek data lagi.
-          window.asposAutoSyncNow();
-        }
+        if (!document.hidden) window.asposAutoSyncNow();
       });
     })();
 
