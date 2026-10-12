@@ -4938,9 +4938,33 @@ function prosesCheckoutReturFinal() {
           }
           if (list.length) {
             el.style.color = '#d97706';
+            el.style.cursor = 'pointer';
             el.innerText = '⏳ ' + list.length + ' transaksi menunggu sinkronisasi';
+            // Tampilkan penyebab terakhir saat notifikasi diklik, agar antrean yang gagal
+            // tidak terlihat seperti sekadar badge yang tidak dapat dijelaskan.
+            el.onclick = function() {
+              const item = list.slice().sort(function(a,b) {
+                return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+              })[0];
+              const detail = [
+                'Transaksi lokal: ' + String(item.no_nota || item.clientTransactionId || '-'),
+                'Percobaan kirim: ' + String(item.retryCount || 0),
+                'Status: ' + String(item.status || 'PENDING'),
+                'Penyebab terakhir: ' + String(item.lastError || 'Belum ada pesan error tersimpan.'),
+                '',
+                'Jangan hapus data aplikasi. Jika penyebabnya menyebut nomor nota server, periksa transaksi di Google Sheets sebelum mencoba kirim ulang.'
+              ].join('\\n');
+              alert(detail);
+            };
+            const oldest = list.slice().sort(function(a,b) {
+              return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+            })[0];
+            el.title = 'Klik untuk melihat detail antrean. ' + String(oldest.lastError || '');
           } else {
             el.style.color = asposIsOnline() ? '#198754' : '#dc3545';
+            el.style.cursor = 'default';
+            el.onclick = null;
+            el.title = '';
             el.innerText = asposIsOnline() ? '🟢 Online • Tersinkron' : '🔴 Offline';
           }
         }).catch(function(){});
