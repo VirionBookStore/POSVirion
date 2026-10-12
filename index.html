@@ -5062,7 +5062,7 @@ function prosesCheckoutReturFinal() {
             const itemRows = items.map(function(item, idx) {
               const label = String(item.nama_barang || item.name || item.id_barang || 'Barang tanpa nama');
               const id = String(item.id_barang || '-');
-              return '<tr><td>' + (idx+1) + '</td><td>' + label.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}) + '<br><small>ID: ' + id.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}) + '</small></td><td>' + (Number(item.qty)||0) + '</td><td>' + formatPendingMoney(item.subtotal !== undefined ? item.subtotal : (Number(item.harga_jual||item.harga_satuan)||0)*(Number(item.qty)||0)) + '</td><td><button class="btn btn-outline" style="padding:5px 8px;font-size:11px;" onclick="ownerRemovePendingItem(\'' + String(tx.clientTransactionId).replace(/'/g,'') + '\',' + idx + ')">Hapus item ini</button></td></tr>';
+              return '<tr><td>' + (idx+1) + '</td><td>' + label.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}) + '<br><small>ID: ' + id.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}) + '</small></td><td>' + (Number(item.qty)||0) + '</td><td>' + formatPendingMoney(item.subtotal !== undefined ? item.subtotal : (Number(item.harga_jual||item.harga_satuan)||0)*(Number(item.qty)||0)) + '</td><td><button class="btn btn-outline" style="padding:5px 8px;font-size:11px;" onclick="ownerRemovePendingItem(&quot;' + String(tx.clientTransactionId).replace(/'/g,'') + '&quot;,' + idx + ')">Hapus item ini</button></td></tr>';
             }).join('');
             const safeNo = String(tx.no_nota || tx.clientTransactionId || '-').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
             const safeError = String(tx.lastError || 'Belum ada detail error.').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
@@ -5070,7 +5070,7 @@ function prosesCheckoutReturFinal() {
               '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div><b>Nota lokal: ' + safeNo + '</b><div style="font-size:12px;color:#64748b;margin-top:4px;">Cabang: ' + String((tx.payload||{}).id_cabang || '-') + ' • Dibuat: ' + String(tx.createdAt || '-') + '</div></div><span style="font-size:12px;color:#b45309;font-weight:700;">PENDING • Percobaan ' + (Number(tx.retryCount)||0) + '</span></div>' +
               '<div style="font-size:12px;color:#b91c1c;margin:8px 0;">Penyebab terakhir: ' + safeError + '</div>' +
               '<div style="overflow-x:auto;"><table class="table" style="min-width:650px;"><thead><tr><th>No</th><th>Barang</th><th>Qty</th><th>Subtotal</th><th>Tindakan</th></tr></thead><tbody>' + (itemRows || '<tr><td colspan="5">Tidak ada detail barang.</td></tr>') + '</tbody></table></div>' +
-              '<button class="btn btn-danger" style="margin-top:10px;" onclick="ownerDeletePendingTransaction(\'' + String(tx.clientTransactionId).replace(/'/g,'') + '\')">Hapus seluruh transaksi pending</button>' +
+              '<button class="btn btn-danger" style="margin-top:10px;" onclick="ownerDeletePendingTransaction(&quot;' + String(tx.clientTransactionId).replace(/'/g,'') + '&quot;)">Hapus seluruh transaksi pending</button>' +
               '</div>';
           }).join('');
         }).catch(function(err) {
