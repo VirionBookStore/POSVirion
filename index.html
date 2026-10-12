@@ -4950,11 +4950,31 @@ function prosesCheckoutReturFinal() {
                 'Transaksi lokal: ' + String(item.no_nota || item.clientTransactionId || '-'),
                 'Percobaan kirim: ' + String(item.retryCount || 0),
                 'Status: ' + String(item.status || 'PENDING'),
-                'Penyebab terakhir: ' + String(item.lastError || 'Belum ada pesan error tersimpan.'),
-                '',
-                'Jangan hapus data aplikasi. Jika penyebabnya menyebut nomor nota server, periksa transaksi di Google Sheets sebelum mencoba kirim ulang.'
+                'Penyebab terakhir: ' + String(item.lastError || 'Belum ada pesan error tersimpan.')
               ].join('\\n');
               alert(detail);
+
+              // Pembersihan dibatasi pada satu transaksi percobaan yang telah dikonfirmasi user.
+              // Tidak pernah menghapus antrean transaksi lain.
+              if (String(item.no_nota || '') === 'LOCAL-684745286-4SV0JP06') {
+                const removeTest = confirm(
+                  'Transaksi ini sudah dikonfirmasi sebagai transaksi percobaan.\\n\\n' +
+                  'Hapus hanya antrean lokal dan riwayat lokal transaksi ini?\\n' +
+                  'Tindakan ini tidak menghapus data di Google Sheets.'
+                );
+                if (removeTest) {
+                  Promise.resolve()
+                    .then(function() { return deleteStoreItem('pendingTransactions', item.clientTransactionId); })
+                    .then(function() { return deleteStoreItem('riwayatPenjualan', item.no_nota); })
+                    .then(function() {
+                      updateOfflineTransactionStatus();
+                      alert('Antrean lokal transaksi percobaan sudah dihapus. Tidak ada transaksi lain yang dihapus.');
+                    })
+                    .catch(function(err) {
+                      alert('Antrean belum berhasil dihapus: ' + String(err && err.message ? err.message : err));
+                    });
+                }
+              }
             };
             const oldest = list.slice().sort(function(a,b) {
               return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
