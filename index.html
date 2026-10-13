@@ -2804,7 +2804,15 @@ function simpanEditItemModal() {
        let bayarUang = Number(data.bayar) || totBayar;
        let kembaliUang = Number(data.kembali) || (bayarUang - totBayar);
        let discGlobalVal = Number(data.diskonGlobal) || 0;
-       let totalDiscAll = totDiscItem + discGlobalVal;
+       // Subtotal item pada transaksi baru sudah dipotong diskon global secara proporsional.
+       // Jangan menambahkan diskon global lagi karena akan terhitung dua kali.
+       // totalDiskonItem menyimpan total diskon item + diskon global.
+       let totalDiscAll = Number(data.totalDiskonItem);
+       if (!Number.isFinite(totalDiscAll) || totalDiscAll < 0) {
+         // Kompatibilitas data lama: pakai diskon yang tercermin pada subtotal item
+         // atau nilai diskon global, pilih yang terbesar agar tidak double-count.
+         totalDiscAll = Math.max(totDiscItem, discGlobalVal);
+       }
 
        document.getElementById("strukSubtotal").innerText = "Rp " + (subKotor > 0 ? subKotor : totBayar).toLocaleString('id-ID');
        document.getElementById("strukDiskon").innerText = "- Rp " + totalDiscAll.toLocaleString('id-ID');
