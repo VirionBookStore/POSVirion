@@ -4263,6 +4263,19 @@ function handleReturPosInput() {
 }
 
 function tambahKeKeranjangRetur(item) {
+  // --- TAMBAHAN VALIDASI STOK ---
+  // Jika mode-nya adalah 'beli' (tukar barang baru) dan stok di sistem tidak cukup
+  if (currentReturMode === 'beli') {
+    let exist = keranjangRetur.find(k => k.id_barang === item.id_barang && k.mode === 'beli');
+    let currentCartQty = exist ? exist.qty : 0;
+    
+    if (currentCartQty >= Number(item.stok)) {
+      alert("Gagal: Stok barang tersisa (" + item.stok + ") tidak mencukupi untuk ditukar/dibeli!");
+      return; // Batalkan proses penambahan ke keranjang
+    }
+  }
+  // ------------------------------
+
   let exist = keranjangRetur.find(k => k.id_barang === item.id_barang && k.mode === currentReturMode);
   if (exist) {
     exist.qty += 1;
