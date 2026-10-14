@@ -2241,11 +2241,11 @@ function renderPosProductList() {
     let imgUrl = item.gambar ? item.gambar : 'https://via.placeholder.com/45?text=No+Img';
     
     div.innerHTML = `
-          <img src="${imgUrl}" class="pos-item-icon" style="object-fit:cover; border:1px solid #dee2e6; background:#fff;" onerror="this.onerror=null;this.src='https://via.placeholder.com/45?text=Img';">
-          <div class="pos-item-details">
-            <div class="pos-item-title">${item.nama_barang}</div>
-            <div class="pos-item-meta">${badgeModeText} &bull; Stok: <b style="color:#000;">${item.stok}</b> &bull; Rp ${Number(item.harga_jual).toLocaleString('id-ID')}</div>
-          </div>
+      <img src="${imgUrl}" class="pos-item-icon" style="object-fit:cover; border:1px solid #dee2e6; background:#fff;" onerror="this.onerror=null;this.src='https://via.placeholder.com/45?text=Img';">
+      <div class="pos-item-details">
+        <div class="pos-item-title">${item.nama_barang}</div>
+        <div class="pos-item-meta">${badgeModeText} &bull; Stok: <b style="color:#000;">${item.stok}</b> &bull; Rp ${Number(item.harga_jual).toLocaleString('id-ID')}</div>
+      </div>
           ${qtyBadge}
         `;
     listWrapper.appendChild(div);
