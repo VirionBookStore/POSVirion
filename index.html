@@ -5581,6 +5581,7 @@ function prosesCheckoutReturFinal() {
           }).replace(/:/g,'.');
           localStorage.setItem('aspos_last_sync', timeString);
           localStorage.setItem('aspos_last_sync_epoch', String(Date.now()));
+          localStorage.setItem('aspos_master_branch', String(currentUser ? currentUser.id_cabang : ''));
 
           if (btn) {
             btn.innerText = '✅ 100% Selesai';
