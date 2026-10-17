@@ -1806,26 +1806,9 @@ async function loadDashboardByDate() {
 
   if (!startStr || !endStr) return alert('Silakan pilih rentang tanggal penjualan terlebih dahulu.');
 
-  // =========================================================
-  // 1. BACA DARI INDEXEDDB LOKAL (INSTAN TANPA LOADING)
-  // =========================================================
-  if (typeof getAllFromStore === 'function' && db) {
-    try {
-      var localSales = await getAllFromStore('riwayatPenjualan');
-      var localBarang = await getAllFromStore('masterBarang');
-
-      if (localSales && localSales.length > 0) {
-        processDashboardLocalData(localSales, localBarang, startStr, endStr, branchId);
-        return; // Selesai instan dari IndexedDB
-      }
-    } catch (e) {
-      console.warn("Gagal membaca lokal DB dashboard, menggunakan fallback server:", e);
-    }
-  }
-
-  // =========================================================
-  // 2. FALLBACK KETIKA INDEXEDDB KOSONG (PANGGIL SERVER GAS)
-  // =========================================================
+  // Dashboard harus memakai agregasi server yang sudah memperhitungkan
+  // transaksi penjualan, retur, dan tukar barang. Cache IndexedDB dapat tertinggal
+  // atau tidak memuat detail retur, sehingga tidak boleh menjadi sumber angka final.
   if (btn) { btn.disabled = true; btn.innerText = 'Memuat...'; }
   if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data dari server...</td></tr>';
 
@@ -3421,80 +3404,90 @@ function simpanEditItemModal() {
         }
       }
 
-      // Utamakan riwayat lokal untuk laporan; gunakan server hanya jika
-      // IndexedDB belum memiliki data transaksi atau detail item yang diperlukan.
-      (async function() {
-        try {
-          var ready = await asposEnsureIndexedDB();
-          var sales = ready ? await getAllFromStore('riwayatPenjualan') : [];
-          var localRows = [];
-          if (sales && sales.length) {
-            var master = ready ? await getAllFromStore('masterBarang') : [];
-            var masterMap = {};
-            (master || []).forEach(function(b) { masterMap[String(b.id_barang || '')] = b; });
+          // Laporan server adalah sumber utama karena data retur/tukar dapat tersimpan
+      // sebagai detail transaksi negatif yang tidak tercakup dalam cache header lokal.
+      google.script.run
+        .withSuccessHandler(async function(resData) {
+          var rows = Array.isArray(resData) ? resData.slice() : [];
+          try {
+            var headers = await asposCallGasLocalFirst('getPenjualan', [
+              currentUser ? currentUser.id_cabang : '',
+              currentUser ? currentUser.role : ''
+            ]);
+            if (!Array.isArray(headers) && headers && Array.isArray(headers.data)) headers = headers.data;
+            if (!Array.isArray(headers)) headers = [];
             var startDate = start ? new Date(start + 'T00:00:00') : null;
             var endDate = end ? new Date(end + 'T23:59:59.999') : null;
-            sales.forEach(function(trx) {
-              if (branchId && branchId !== 'Semua' && String(trx.id_cabang || '') !== String(branchId)) return;
-              if (!branchId && !isOwner() && currentUser && currentUser.id_cabang &&
-                  String(trx.id_cabang || '') !== String(currentUser.id_cabang)) return;
-              var d = typeof parseTanggalRiwayat === 'function' ? parseTanggalRiwayat(trx.tanggal) : new Date(trx.tanggal);
-              if (startDate && (!d || d < startDate)) return;
-              if (endDate && (!d || d > endDate)) return;
-              var items = [];
-              if (Array.isArray(trx.items)) items = trx.items;
-              else if (typeof trx.items === 'string') { try { items = JSON.parse(trx.items); } catch(e) {} }
-              else if (Array.isArray(trx.detail)) items = trx.detail;
-              else if (typeof trx.detail === 'string') { try { items = JSON.parse(trx.detail); } catch(e) {} }
-              items.forEach(function(item) {
-                var id = String(item.id_barang || '').trim();
-                if (!id) return;
-                var masterItem = masterMap[id] || {};
-                localRows.push({
-                  no_nota: trx.no_nota || trx.nota || '',
-                  tanggal: trx.tanggal || '',
-                  kasir: trx.kasir || trx.nama_kasir || trx.petugas || '',
-                  id_barang: id,
-                  nama_barang: item.nama_barang || masterItem.nama_barang || id,
-                  supplier: item.supplier || masterItem.supplier || '',
-                  harga_satuan: Number(item.harga_satuan || item.harga_jual || item.harga || 0),
-                  qty: Number(item.qty || item.jumlah || 0),
-                  subtotal: Number(item.subtotal || item.total || 0)
+            var returns = headers.filter(function(h) {
+              var qty = Number(h.total_item !== undefined ? h.total_item : h.jumlah_item) || 0;
+              var total = Number(h.total_bayar !== undefined ? h.total_bayar : h.total) || 0;
+              var d = typeof parseTanggalRiwayat === 'function' ? parseTanggalRiwayat(h.tanggal) : new Date(h.tanggal);
+              var branchMatch = !branchId || branchId === 'Semua' || String(h.id_cabang || '') === String(branchId);
+              return branchMatch && (qty < 0 || total < 0) && d &&
+                (!startDate || d >= startDate) && (!endDate || d <= endDate);
+            });
+            var detailResults = await Promise.all(returns.map(function(h) {
+              return asposCallGasLocalFirst('getDetailPenjualanByNota', [h.no_nota]).then(function(details) {
+                return (Array.isArray(details) ? details : []).map(function(d) {
+                  var qty = Number(d.qty) || 0;
+                  if (qty > 0) qty = -qty;
+                  var price = Number(d.harga_satuan || d.harga_jual || d.harga) || 0;
+                  var subtotal = Number(d.subtotal);
+                  if (!Number.isFinite(subtotal) || subtotal === 0) subtotal = price * qty;
+                  else if (subtotal > 0) subtotal = -subtotal;
+                  return {
+                    no_nota: h.no_nota || h.nota || '',
+                    tanggal: h.tanggal || d.tanggal || '',
+                    kasir: h.kasir || d.kasir || h.petugas || '',
+                    id_barang: d.id_barang || '',
+                    nama_barang: d.nama_barang || d.id_barang || 'Barang retur',
+                    supplier: d.supplier || '',
+                    harga_satuan: price,
+                    qty: qty,
+                    subtotal: subtotal,
+                    is_return: true
+                  };
+                }).filter(function(d) { return !!d.id_barang; });
+              }).catch(function(err) {
+                console.warn('[AS-Pos] Detail retur gagal dimuat:', h.no_nota, err);
+                return [];
+              });
+            }));
+            detailResults.forEach(function(details) {
+              details.forEach(function(detail) {
+                var exists = rows.some(function(r) {
+                  return String(r.no_nota || '') === String(detail.no_nota) &&
+                    String(r.id_barang || '') === String(detail.id_barang || '');
                 });
+                if (!exists) rows.push(detail);
               });
             });
+          } catch (err) {
+            console.warn('[AS-Pos] Tidak dapat melengkapi detail retur:', err);
           }
-          if (localRows.length) {
-            if (mode === 'rekap') {
-              var grouped = {};
-              localRows.forEach(function(item) {
-                var key = [item.id_barang, item.supplier, item.harga_satuan].join('|||');
-                if (!grouped[key]) grouped[key] = {
-                  id_barang: item.id_barang, nama_barang: item.nama_barang,
-                  supplier: item.supplier, harga_satuan: item.harga_satuan,
-                  total_qty: 0, total_pendapatan: 0
-                };
-                grouped[key].total_qty += item.qty;
-                grouped[key].total_pendapatan += item.subtotal;
-              });
-              renderAdvancedReport(Object.keys(grouped).map(function(key) { return grouped[key]; }));
-            } else {
-              renderAdvancedReport(localRows);
-            }
-            return;
+          if (mode === 'rekap') {
+            var grouped = {};
+            rows.forEach(function(item) {
+              var key = [item.id_barang, item.supplier, item.harga_satuan].join('|||');
+              if (!grouped[key]) grouped[key] = {
+                id_barang: item.id_barang, nama_barang: item.nama_barang,
+                supplier: item.supplier, harga_satuan: item.harga_satuan,
+                total_qty: 0, total_pendapatan: 0
+              };
+              grouped[key].total_qty += Number(item.qty) || 0;
+              grouped[key].total_pendapatan += Number(item.subtotal) || 0;
+            });
+            renderAdvancedReport(Object.keys(grouped).map(function(key) { return grouped[key]; }));
+          } else {
+            renderAdvancedReport(rows);
           }
-        } catch (err) {
-          console.warn('[AS-Pos] Laporan lokal tidak dapat dihitung; mencoba server:', err);
-        }
-        google.script.run
-          .withSuccessHandler(renderAdvancedReport)
-          .withFailureHandler(function(err) {
-            var tbody = document.getElementById('bodyRekapBarang');
-            if (tbody) tbody.innerHTML = '<tr><td style="text-align:center;color:#dc3545;padding:20px;">Laporan gagal dimuat. Sinkronkan data lalu coba kembali.</td></tr>';
-            console.error('[AS-Pos] Laporan penjualan barang:', err);
-          })
-          .getLaporanPenjualanBarangAdvanced(start, end, mode === 'supplier' ? 'transaksi' : mode, branchId);
-      })();
+        })
+        .withFailureHandler(function(err) {
+          var tbody = document.getElementById('bodyRekapBarang');
+          if (tbody) tbody.innerHTML = '<tr><td style="text-align:center;color:#dc3545;padding:20px;">Laporan gagal dimuat. Sinkronkan data lalu coba kembali.</td></tr>';
+          console.error('[AS-Pos] Laporan penjualan barang:', err);
+        })
+        .getLaporanPenjualanBarangAdvanced(start, end, mode === 'supplier' ? 'transaksi' : mode, branchId);
     }
 
     function exportPenjualanPerBarangExcel(isShare = false) {
