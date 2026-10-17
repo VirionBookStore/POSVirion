@@ -1843,6 +1843,7 @@ async function loadDashboardByDate() {
 }
 
 // Fungsi Pengolah Data Lokal Dashboard secara Instan
+// Fungsi Pengolah Data Lokal Dashboard secara Instan (Diperbaiki)
 function processDashboardLocalData(salesList, barangList, startStr, endStr, branchId) {
   var startDate = new Date(startStr + 'T00:00:00');
   var endDate = new Date(endStr + 'T23:59:59.999');
@@ -1870,14 +1871,25 @@ function processDashboardLocalData(salesList, barangList, startStr, endStr, bran
     totalTransaksi++;
     totalPendapatan += Number(trx.total_bayar || trx.total) || 0;
 
-    var items = Array.isArray(trx.items) ? trx.items : [];
+    // --- PERBAIKAN: Parsing items yang berbentuk String JSON atau format alternatif ---
+    var items = [];
+    if (Array.isArray(trx.items)) {
+      items = trx.items;
+    } else if (typeof trx.items === 'string' && trx.items.trim() !== '') {
+      try { items = JSON.parse(trx.items); } catch(e) { items = []; }
+    } else if (Array.isArray(trx.detail)) {
+      items = trx.detail;
+    } else if (typeof trx.detail === 'string' && trx.detail.trim() !== '') {
+      try { items = JSON.parse(trx.detail); } catch(e) { items = []; }
+    }
+
     items.forEach(function(item) {
       var id = String(item.id_barang || '').trim();
       if (!id) return;
 
       var qty = Number(item.qty) || 0;
       var subtotal = Number(item.subtotal) || 0;
-      var infoMaster = barangMap[id] || { nama: item.nama_barang || id, hargaBeli: 0 };
+      var infoMaster = barangMap[id] || { nama: item.nama_barang || id, hargaBeli: Number(item.harga_satuan || item.harga_jual) || 0 };
       var keuntungan = subtotal - (infoMaster.hargaBeli * qty);
 
       if (!rekapMap[id]) {
@@ -1900,6 +1912,14 @@ function processDashboardLocalData(salesList, barangList, startStr, endStr, bran
       totalKeuntungan += keuntungan;
     });
   });
+
+  // FALLBACK: Jika riwayat lokal dari server tidak menyimpan array items,
+  // alihkan otomatis panggil data lengkap dari server.
+  if (totalTransaksi > 0 && totalBarangTerjual === 0) {
+    console.warn("Data items tidak ditemukan di IndexedDB lokal, beralih mengambil dari server...");
+    fetchDashboardFromServer(startStr, endStr, branchId);
+    return;
+  }
 
   var rincian = Object.keys(rekapMap).map(function(id) {
     var item = rekapMap[id];
@@ -1925,6 +1945,26 @@ function processDashboardLocalData(salesList, barangList, startStr, endStr, bran
   };
 
   renderDashboardUI(dashboardData, startStr, endStr);
+}
+
+// Helper untuk fallback ke server jika data lokal tidak memiliki item detail
+function fetchDashboardFromServer(startStr, endStr, branchId) {
+  var btn = document.getElementById('btnDashboardDate');
+  var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
+
+  if (btn) { btn.disabled = true; btn.innerText = 'Memuat...'; }
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat detail barang dari server...</td></tr>';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      renderDashboardUI(data, startStr, endStr);
+      if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
+    })
+    .withFailureHandler(function(err) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard.</td></tr>';
+      if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
+    })
+    .getDashboardData(startStr, endStr, branchId);
 }
 
 // Fungsi Render UI Dashboard
