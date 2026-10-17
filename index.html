@@ -6101,6 +6101,37 @@ function prosesCheckoutReturFinal() {
     }
     window.loadReturBarang = asposLoadReturBarangLocalFirst;
 
+    function asposNormalizeRiwayatRow(row) {
+      row = row || {};
+      var items = Array.isArray(row.items) ? row.items : [];
+      var totalItem = row.total_item;
+      if (totalItem === undefined || totalItem === null || totalItem === '') {
+        totalItem = row.jumlah_item !== undefined ? row.jumlah_item :
+          (row.qty !== undefined ? row.qty : items.reduce(function(sum, it) { return sum + (Number(it.qty) || 0); }, 0));
+      }
+      var totalBayar = row.total_bayar;
+      if (totalBayar === undefined || totalBayar === null || totalBayar === '') {
+        totalBayar = row.total !== undefined ? row.total :
+          (row.bayar !== undefined ? row.bayar : row.total_pembayaran);
+      }
+      var metode = row.metode_pembayaran || row.metode || row.payment_method || row.metode_bayar || '';
+      var potongan = row.potongan;
+      if (potongan === undefined || potongan === null || potongan === '') {
+        potongan = row.total_potongan !== undefined ? row.total_potongan :
+          (row.diskon !== undefined ? row.diskon :
+          (row.totalDiskonItem !== undefined ? row.totalDiskonItem : row.total_diskon));
+      }
+      return Object.assign({}, row, {
+        no_nota: row.no_nota || row.nota || row.nomor_nota || '',
+        tanggal: row.tanggal || row.createdAt || row.waktu || '',
+        total_item: Number(totalItem) || 0,
+        total_bayar: Number(totalBayar) || 0,
+        metode_pembayaran: metode || '-',
+        potongan: Number(potongan) || 0,
+        kasir: row.kasir || row.nama_kasir || '-'
+      });
+    }
+
     async function asposLoadRiwayatLocalFirst() {
       var now = new Date();
       var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
@@ -6109,8 +6140,47 @@ function prosesCheckoutReturFinal() {
       if (start && !start.value) start.value = today;
       if (end && !end.value) end.value = today;
       try {
-        var result = await asposGetLocalOrServer('riwayatPenjualan', 'getPenjualan', [currentUser ? currentUser.id_cabang : '', currentUser ? currentUser.role : '']);
-        globalRiwayatData = Array.isArray(result.data) ? result.data : [];
+        var ready = await asposEnsureIndexedDB();
+        var localRows = [];
+        if (ready) {
+          try { localRows = await getAllFromStore('riwayatPenjualan'); } catch (e) {}
+        }
+
+        // Server tetap menjadi sumber riwayat transaksi yang sudah tersimpan.
+        // IndexedDB menambahkan transaksi pending yang belum ada di server.
+        var serverRows = [];
+        var serverError = null;
+        try {
+          var response = await asposCallGasLocalFirst('getPenjualan', [
+            currentUser ? currentUser.id_cabang : '',
+            currentUser ? currentUser.role : ''
+          ]);
+          if (Array.isArray(response)) serverRows = response;
+          else if (response && Array.isArray(response.data)) serverRows = response.data;
+          else if (response && Array.isArray(response.items)) serverRows = response.items;
+          else throw new Error('Respons getPenjualan bukan array data.');
+        } catch (err) {
+          serverError = err;
+          console.warn('[AS-Pos] Riwayat server tidak dapat dimuat; menggunakan data lokal:', err);
+        }
+
+        var serverNormalized = serverRows.map(asposNormalizeRiwayatRow);
+        var serverKeys = new Set(serverNormalized.map(function(r) { return String(r.no_nota || '').trim(); }).filter(Boolean));
+        var localNormalized = localRows.map(asposNormalizeRiwayatRow);
+        var localOnly = localNormalized.filter(function(r) {
+          var status = String(r.sync_status || r.status || '').toUpperCase();
+          var nota = String(r.no_nota || '').trim();
+          return status === 'PENDING' || (nota && !serverKeys.has(nota));
+        });
+
+        globalRiwayatData = serverError
+          ? localNormalized
+          : serverNormalized.concat(localOnly.filter(function(r) {
+              var key = String(r.server_no_nota || r.no_nota || '').trim();
+              return !serverKeys.has(key);
+            }));
+
+        if (!globalRiwayatData.length && serverError) throw serverError;
         filterRiwayatTransaksi();
       } catch (err) {
         console.error('[AS-Pos] Riwayat penjualan:', err);
