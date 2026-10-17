@@ -1818,61 +1818,46 @@ async function loadDashboardByDate() {
       // dengan item nota retur/tukar (qty/subtotal negatif) agar sumber pengurangan
       // pendapatan terlihat jelas pada Dashboard.
       try {
-        var headers = await asposCallGasPromise('getPenjualan', [
-          currentUser ? currentUser.id_cabang : '',
-          currentUser ? currentUser.role : ''
+        // Gunakan endpoint laporan transaksi yang sudah terbukti menampilkan detail
+        // barang retur di mode Filter per Transaksi. Ini lebih andal daripada
+        // menyimpulkan detail retur dari header nota saja.
+        var reportRows = await asposCallGasPromise('getLaporanPenjualanBarangAdvanced', [
+          startStr, endStr, 'transaksi', branchId
         ]);
-        if (!Array.isArray(headers) && headers && Array.isArray(headers.data)) headers = headers.data;
-        if (!Array.isArray(headers)) headers = [];
-        var startDate = new Date(startStr + 'T00:00:00');
-        var endDate = new Date(endStr + 'T23:59:59.999');
-        var returns = headers.filter(function(h) {
-          var qty = Number(h.total_item !== undefined ? h.total_item : h.jumlah_item) || 0;
-          var total = Number(h.total_bayar !== undefined ? h.total_bayar : h.total) || 0;
-          var d = typeof parseTanggalRiwayat === 'function' ? parseTanggalRiwayat(h.tanggal) : new Date(h.tanggal);
-          var branchMatch = !branchId || branchId === 'Semua' || String(h.id_cabang || '') === String(branchId);
-          return branchMatch && (qty < 0 || total < 0) && d && d >= startDate && d <= endDate;
-        });
-        var details = await Promise.all(returns.map(function(h) {
-          return asposCallGasPromise('getDetailPenjualanByNota', [h.no_nota]).then(function(items) {
-            return (Array.isArray(items) ? items : []).map(function(it) {
-              var qty = Number(it.qty) || 0;
-              if (qty > 0) qty = -qty;
-              var subtotal = Number(it.subtotal);
-              var price = Number(it.harga_satuan || it.harga_jual || it.harga) || 0;
-              if (!Number.isFinite(subtotal) || subtotal === 0) subtotal = price * qty;
-              else if (subtotal > 0) subtotal = -subtotal;
-              return {
-                id_barang: String(it.id_barang || '').trim(),
-                nama_barang: it.nama_barang || it.id_barang || 'Barang retur',
-                jumlah_barang: qty,
-                jumlah_transaksi: 1,
-                pendapatan: subtotal,
-                keuntungan: subtotal
-              };
-            }).filter(function(it) { return !!it.id_barang; });
-          }).catch(function(err) {
-            console.warn('[AS-Pos] Detail retur dashboard gagal dimuat:', h.no_nota, err);
-            return [];
-          });
-        }));
+        if (!Array.isArray(reportRows) && reportRows && Array.isArray(reportRows.data)) reportRows = reportRows.data;
+        if (!Array.isArray(reportRows)) reportRows = [];
+        var returnItems = reportRows.filter(function(row) {
+          return (Number(row.qty) || 0) < 0;
+        }).map(function(row) {
+          var qty = Number(row.qty) || 0;
+          var subtotal = Number(row.subtotal);
+          if (!Number.isFinite(subtotal) || subtotal === 0) {
+            subtotal = (Number(row.harga_satuan || row.harga_jual || row.harga) || 0) * qty;
+          }
+          return {
+            id_barang: String(row.id_barang || '').trim(),
+            nama_barang: row.nama_barang || row.id_barang || 'Barang retur',
+            jumlah_barang: qty,
+            jumlah_transaksi: 0,
+            pendapatan: subtotal,
+            keuntungan: subtotal
+          };
+        }).filter(function(row) { return !!row.id_barang; });
         var map = {};
         (data.rincian_barang || []).forEach(function(item) {
           var id = String(item.id_barang || '').trim();
           if (!id) return;
           map[id] = Object.assign({}, item);
         });
-        details.forEach(function(list) {
-          list.forEach(function(item) {
-            var id = item.id_barang;
-            if (!map[id]) map[id] = {
+        returnItems.forEach(function(item) {
+          var id = item.id_barang;
+          if (!map[id]) map[id] = {
               id_barang: id, nama_barang: item.nama_barang,
               jumlah_barang: 0, jumlah_transaksi: 0, keuntungan: 0, pendapatan: 0
             };
-            map[id].jumlah_barang = (Number(map[id].jumlah_barang) || 0) + item.jumlah_barang;
-            map[id].pendapatan = (Number(map[id].pendapatan) || 0) + item.pendapatan;
-            map[id].keuntungan = (Number(map[id].keuntungan) || 0) + item.keuntungan;
-          });
+          map[id].jumlah_barang = (Number(map[id].jumlah_barang) || 0) + item.jumlah_barang;
+          map[id].pendapatan = (Number(map[id].pendapatan) || 0) + item.pendapatan;
+          map[id].keuntungan = (Number(map[id].keuntungan) || 0) + item.keuntungan;
         });
         data.rincian_barang = Object.keys(map).map(function(id) { return map[id]; })
           .sort(function(a,b) { return (Number(b.pendapatan)||0) - (Number(a.pendapatan)||0); });
