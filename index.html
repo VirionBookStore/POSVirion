@@ -3237,7 +3237,7 @@ function simpanEditItemModal() {
       }
       // ------------------------------------
 
-      google.script.run.withSuccessHandler(function(resData) {
+      function renderAdvancedReport(resData) {
         var thead = document.getElementById("headerRekapBarang");
         var tbody = document.getElementById("bodyRekapBarang");
         thead.innerHTML = "";
@@ -3398,7 +3398,82 @@ function simpanEditItemModal() {
           var summaryBox = document.getElementById('supplierBruttoSummary');
           if (summaryBox) summaryBox.style.display = 'none';
         }
-      }).getLaporanPenjualanBarangAdvanced(start, end, mode === 'supplier' ? 'transaksi' : mode, branchId);
+      }
+
+      // Utamakan riwayat lokal untuk laporan; gunakan server hanya jika
+      // IndexedDB belum memiliki data transaksi atau detail item yang diperlukan.
+      (async function() {
+        try {
+          var ready = await asposEnsureIndexedDB();
+          var sales = ready ? await getAllFromStore('riwayatPenjualan') : [];
+          var localRows = [];
+          if (sales && sales.length) {
+            var master = ready ? await getAllFromStore('masterBarang') : [];
+            var masterMap = {};
+            (master || []).forEach(function(b) { masterMap[String(b.id_barang || '')] = b; });
+            var startDate = start ? new Date(start + 'T00:00:00') : null;
+            var endDate = end ? new Date(end + 'T23:59:59.999') : null;
+            sales.forEach(function(trx) {
+              if (branchId && branchId !== 'Semua' && String(trx.id_cabang || '') !== String(branchId)) return;
+              if (!branchId && !isOwner() && currentUser && currentUser.id_cabang &&
+                  String(trx.id_cabang || '') !== String(currentUser.id_cabang)) return;
+              var d = typeof parseTanggalRiwayat === 'function' ? parseTanggalRiwayat(trx.tanggal) : new Date(trx.tanggal);
+              if (startDate && (!d || d < startDate)) return;
+              if (endDate && (!d || d > endDate)) return;
+              var items = [];
+              if (Array.isArray(trx.items)) items = trx.items;
+              else if (typeof trx.items === 'string') { try { items = JSON.parse(trx.items); } catch(e) {} }
+              else if (Array.isArray(trx.detail)) items = trx.detail;
+              else if (typeof trx.detail === 'string') { try { items = JSON.parse(trx.detail); } catch(e) {} }
+              items.forEach(function(item) {
+                var id = String(item.id_barang || '').trim();
+                if (!id) return;
+                var masterItem = masterMap[id] || {};
+                localRows.push({
+                  no_nota: trx.no_nota || trx.nota || '',
+                  tanggal: trx.tanggal || '',
+                  kasir: trx.kasir || trx.nama_kasir || trx.petugas || '',
+                  id_barang: id,
+                  nama_barang: item.nama_barang || masterItem.nama_barang || id,
+                  supplier: item.supplier || masterItem.supplier || '',
+                  harga_satuan: Number(item.harga_satuan || item.harga_jual || item.harga || 0),
+                  qty: Number(item.qty || item.jumlah || 0),
+                  subtotal: Number(item.subtotal || item.total || 0)
+                });
+              });
+            });
+          }
+          if (localRows.length) {
+            if (mode === 'rekap') {
+              var grouped = {};
+              localRows.forEach(function(item) {
+                var key = [item.id_barang, item.supplier, item.harga_satuan].join('|||');
+                if (!grouped[key]) grouped[key] = {
+                  id_barang: item.id_barang, nama_barang: item.nama_barang,
+                  supplier: item.supplier, harga_satuan: item.harga_satuan,
+                  total_qty: 0, total_pendapatan: 0
+                };
+                grouped[key].total_qty += item.qty;
+                grouped[key].total_pendapatan += item.subtotal;
+              });
+              renderAdvancedReport(Object.keys(grouped).map(function(key) { return grouped[key]; }));
+            } else {
+              renderAdvancedReport(localRows);
+            }
+            return;
+          }
+        } catch (err) {
+          console.warn('[AS-Pos] Laporan lokal tidak dapat dihitung; mencoba server:', err);
+        }
+        google.script.run
+          .withSuccessHandler(renderAdvancedReport)
+          .withFailureHandler(function(err) {
+            var tbody = document.getElementById('bodyRekapBarang');
+            if (tbody) tbody.innerHTML = '<tr><td style="text-align:center;color:#dc3545;padding:20px;">Laporan gagal dimuat. Sinkronkan data lalu coba kembali.</td></tr>';
+            console.error('[AS-Pos] Laporan penjualan barang:', err);
+          })
+          .getLaporanPenjualanBarangAdvanced(start, end, mode === 'supplier' ? 'transaksi' : mode, branchId);
+      })();
     }
 
     function exportPenjualanPerBarangExcel(isShare = false) {
