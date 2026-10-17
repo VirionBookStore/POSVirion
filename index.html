@@ -1821,18 +1821,20 @@ async function loadDashboardByDate() {
         // Gunakan endpoint laporan transaksi yang sudah terbukti menampilkan detail
         // barang retur di mode Filter per Transaksi. Ini lebih andal daripada
         // menyimpulkan detail retur dari header nota saja.
-        var reportRows = await asposCallGasPromise('getLaporanPenjualanBarangAdvanced', [
+        var reportRows = await asposCallGasLocalFirst('getLaporanPenjualanBarangAdvanced', [
           startStr, endStr, 'transaksi', branchId
         ]);
         if (!Array.isArray(reportRows) && reportRows && Array.isArray(reportRows.data)) reportRows = reportRows.data;
+        if (!Array.isArray(reportRows) && reportRows && Array.isArray(reportRows.items)) reportRows = reportRows.items;
         if (!Array.isArray(reportRows)) reportRows = [];
         var returnItems = reportRows.filter(function(row) {
-          return (Number(row.qty) || 0) < 0;
+          var rowQty = row.qty !== undefined ? row.qty : (row.total_qty !== undefined ? row.total_qty : row.jumlah_barang);
+          return (Number(rowQty) || 0) < 0;
         }).map(function(row) {
-          var qty = Number(row.qty) || 0;
-          var subtotal = Number(row.subtotal);
+          var qty = Number(row.qty !== undefined ? row.qty : (row.total_qty !== undefined ? row.total_qty : row.jumlah_barang)) || 0;
+          var subtotal = Number(row.subtotal !== undefined ? row.subtotal : row.total_pendapatan);
           if (!Number.isFinite(subtotal) || subtotal === 0) {
-            subtotal = (Number(row.harga_satuan || row.harga_jual || row.harga) || 0) * qty;
+            subtotal = (Number(row.harga_satuan || row.harga_jual || row.harga || row.harga_barang) || 0) * qty;
           }
           return {
             id_barang: String(row.id_barang || '').trim(),
