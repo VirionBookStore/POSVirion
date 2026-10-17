@@ -2839,6 +2839,25 @@ function simpanEditItemModal() {
     }
 
     function konfirmasiPembayaran() {
+      // Validasi ulang stok tepat sebelum transaksi disimpan, bukan hanya saat barang
+      // pertama kali dimasukkan ke keranjang.
+      const stockErrors = [];
+      (keranjang || []).forEach(function(cartItem) {
+        const master = (globalDataBarang || []).find(function(row) {
+          return String(row.id_barang || '').trim() === String(cartItem.id_barang || '').trim();
+        });
+        const available = master ? Number(master.stok) || 0 : 0;
+        if (!master || Number(cartItem.qty) <= 0 || Number(cartItem.qty) > available) {
+          stockErrors.push((cartItem.nama_barang || cartItem.id_barang) +
+            ' (stok tersedia: ' + available + ', diminta: ' + (Number(cartItem.qty) || 0) + ')');
+        }
+      });
+      if (stockErrors.length) {
+        alert('Transaksi dibatalkan karena stok tidak mencukupi:\\n' + stockErrors.join('\\n') +
+          '\\n\\nSegarkan/sinkronkan data stok sebelum mencoba lagi.');
+        return;
+      }
+
       let nominal = Number(document.getElementById("payNominal").value) || 0;
       let metode = document.getElementById("payMetode").value;
       if (metode === "Tunai" && nominal < grandFinalBayar) {
@@ -2908,7 +2927,9 @@ function simpanEditItemModal() {
       tampilkanStruk(lastTransaksi);
       keranjang = [];
       renderKeranjang();
-      loadPosKatalog();
+      // Jangan muat ulang katalog dari server sebelum stok lokal dikurangi.
+      // updateLocalStockAfterTransaction akan memperbarui stok dan tampilan setelah
+      // transaksi berhasil tersimpan ke IndexedDB.
       tutupModalKeranjang();
 
       // LOCAL-FIRST: simpan transaksi ke IndexedDB terlebih dahulu.
@@ -5085,15 +5106,30 @@ function prosesCheckoutReturFinal() {
         const qtyMap = {};
         (items || []).forEach(function(item) {
           const id = String(item.id_barang || '').trim();
-          if (id) qtyMap[id] = (qtyMap[id] || 0) + (Number(item.qty) || 0);
+          const qty = Number(item.qty) || 0;
+          if (id && qty > 0) qtyMap[id] = (qtyMap[id] || 0) + qty;
         });
+
+        // Stok di cache dan katalog yang sedang tampil harus berubah bersamaan.
+        // Jangan biarkan objek globalDataBarang tetap menyimpan stok sebelum transaksi.
         rows.forEach(function(row) {
           const id = String(row.id_barang || '').trim();
           if (qtyMap[id] !== undefined) {
-            row.stok = (Number(row.stok) || 0) - qtyMap[id];
+            row.stok = Math.max(0, (Number(row.stok) || 0) - qtyMap[id]);
           }
         });
-        return replaceStore('masterBarang', rows);
+
+        return replaceStore('masterBarang', rows).then(function(result) {
+          const currentRows = Array.isArray(globalDataBarang) ? globalDataBarang : [];
+          currentRows.forEach(function(row) {
+            const id = String(row.id_barang || '').trim();
+            if (qtyMap[id] !== undefined) {
+              row.stok = Math.max(0, (Number(row.stok) || 0) - qtyMap[id]);
+            }
+          });
+          if (typeof renderPosProductList === 'function') renderPosProductList();
+          return result;
+        });
       });
     }
 
