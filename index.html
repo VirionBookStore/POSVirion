@@ -460,8 +460,8 @@
               <label for="dashboardDate">Tanggal Penjualan</label>
               <div class="dashboard-date-row">
                 <select id="dashboardPilihCabang" class="form-control" style="display:none; width:auto;"></select>
-                <input type="date" id="dashboardDate" class="form-control">
-                <input type="date" id="dashboardDate" class="form-control">
+                <input type="date" id="dashboardStartDate" class="form-control">
+                <input type="date" id="dashboardEndDate" class="form-control">
                 <button class="btn btn-primary" onclick="loadDashboardByDate()" id="btnDashboardDate">Tampilkan</button>
               </div>
             </div>
@@ -1427,7 +1427,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbwc6CmZnu0qH-JIgw9L93J_dSvhRPR0no6xIgH8t95wcJyW1MikwZO-eKVcepDS5hI/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbzRzls_1njFjey6d5t03XvQLILFmW7lYNQp47mBeDm50btXSeUJghzYxtNVDdwxQKI/exec"
     };
 
     (function installGasBridge() {
@@ -1786,12 +1786,182 @@ window.loadBarang = function(isLocalOnly = false) {
     }
 
     function setDashboardDateDefaults() {
-      var dateInput = document.getElementById('dashboardDate');
-      if (!dateInput || dateInput.value) return;
-      var now = new Date();
-      var localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-      dateInput.value = localDate;
+  var startInput = document.getElementById('dashboardStartDate');
+  var endInput = document.getElementById('dashboardEndDate');
+  if (!startInput || !endInput) return;
+  
+  var now = new Date();
+  var localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+  if (!startInput.value) startInput.value = localDate;
+  if (!endInput.value) endInput.value = localDate;
+}
+
+async function loadDashboardByDate() {
+  var startStr = document.getElementById('dashboardStartDate') ? document.getElementById('dashboardStartDate').value : '';
+  var endStr = document.getElementById('dashboardEndDate') ? document.getElementById('dashboardEndDate').value : '';
+  var btn = document.getElementById('btnDashboardDate');
+  var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
+  var branchEl = document.getElementById("dashboardPilihCabang");
+  var branchId = (isOwner() && branchEl) ? branchEl.value : (currentUser ? currentUser.id_cabang : '');
+
+  if (!startStr || !endStr) return alert('Silakan pilih rentang tanggal penjualan terlebih dahulu.');
+
+  // =========================================================
+  // 1. BACA DARI INDEXEDDB LOKAL (INSTAN TANPA LOADING)
+  // =========================================================
+  if (typeof getAllFromStore === 'function' && db) {
+    try {
+      var localSales = await getAllFromStore('riwayatPenjualan');
+      var localBarang = await getAllFromStore('masterBarang');
+
+      if (localSales && localSales.length > 0) {
+        processDashboardLocalData(localSales, localBarang, startStr, endStr, branchId);
+        return; // Selesai instan dari IndexedDB
+      }
+    } catch (e) {
+      console.warn("Gagal membaca lokal DB dashboard, menggunakan fallback server:", e);
     }
+  }
+
+  // =========================================================
+  // 2. FALLBACK KETIKA INDEXEDDB KOSONG (PANGGIL SERVER GAS)
+  // =========================================================
+  if (btn) { btn.disabled = true; btn.innerText = 'Memuat...'; }
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data dari server...</td></tr>';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      renderDashboardUI(data, startStr, endStr);
+      if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
+    })
+    .withFailureHandler(function(err) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard.</td></tr>';
+      if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
+      alert('Gagal memuat Dashboard: ' + (err && err.message ? err.message : err));
+    })
+    .getDashboardData(startStr, endStr, branchId);
+}
+
+// Fungsi Pengolah Data Lokal Dashboard secara Instan
+function processDashboardLocalData(salesList, barangList, startStr, endStr, branchId) {
+  var startDate = new Date(startStr + 'T00:00:00');
+  var endDate = new Date(endStr + 'T23:59:59.999');
+
+  var barangMap = {};
+  (barangList || []).forEach(function(b) {
+    var id = String(b.id_barang || '').trim();
+    if (id) barangMap[id] = { nama: b.nama_barang || id, hargaBeli: Number(b.harga_beli) || 0 };
+  });
+
+  var totalTransaksi = 0;
+  var totalPendapatan = 0;
+  var totalBarangTerjual = 0;
+  var totalKeuntungan = 0;
+  var rekapMap = {};
+
+  salesList.forEach(function(trx) {
+    // Filter berdasarkan Cabang
+    if (branchId && branchId !== 'Semua' && String(trx.id_cabang || '').trim() !== String(branchId).trim()) return;
+
+    // Filter Tanggal
+    var trxDate = parseTanggalRiwayat(trx.tanggal);
+    if (!trxDate || trxDate < startDate || trxDate > endDate) return;
+
+    totalTransaksi++;
+    totalPendapatan += Number(trx.total_bayar || trx.total) || 0;
+
+    var items = Array.isArray(trx.items) ? trx.items : [];
+    items.forEach(function(item) {
+      var id = String(item.id_barang || '').trim();
+      if (!id) return;
+
+      var qty = Number(item.qty) || 0;
+      var subtotal = Number(item.subtotal) || 0;
+      var infoMaster = barangMap[id] || { nama: item.nama_barang || id, hargaBeli: 0 };
+      var keuntungan = subtotal - (infoMaster.hargaBeli * qty);
+
+      if (!rekapMap[id]) {
+        rekapMap[id] = {
+          id_barang: id,
+          nama_barang: infoMaster.nama,
+          jumlah_barang: 0,
+          jumlah_transaksi_set: {},
+          pendapatan: 0,
+          keuntungan: 0
+        };
+      }
+
+      rekapMap[id].jumlah_barang += qty;
+      rekapMap[id].jumlah_transaksi_set[trx.no_nota] = true;
+      rekapMap[id].pendapatan += subtotal;
+      rekapMap[id].keuntungan += keuntungan;
+
+      totalBarangTerjual += qty;
+      totalKeuntungan += keuntungan;
+    });
+  });
+
+  var rincian = Object.keys(rekapMap).map(function(id) {
+    var item = rekapMap[id];
+    return {
+      id_barang: item.id_barang,
+      nama_barang: item.nama_barang,
+      jumlah_barang: item.jumlah_barang,
+      jumlah_transaksi: Object.keys(item.jumlah_transaksi_set).length,
+      keuntungan: item.keuntungan,
+      pendapatan: item.pendapatan
+    };
+  });
+  rincian.sort(function(a, b) { return Number(b.pendapatan) - Number(a.pendapatan); });
+
+  var dashboardData = {
+    total_barang: barangList ? barangList.length : 0,
+    total_supplier: typeof globalDataSupplier !== 'undefined' ? globalDataSupplier.length : 0,
+    total_transaksi: totalTransaksi,
+    total_pendapatan: totalPendapatan,
+    total_barang_terjual: totalBarangTerjual,
+    total_keuntungan: totalKeuntungan,
+    rincian_barang: rincian
+  };
+
+  renderDashboardUI(dashboardData, startStr, endStr);
+}
+
+// Fungsi Render UI Dashboard
+function renderDashboardUI(data, startStr, endStr) {
+  data = data || {};
+  document.getElementById('statTotalBarang').innerText = Number(data.total_barang || 0).toLocaleString('id-ID');
+  document.getElementById('statTotalSupplier').innerText = Number(data.total_supplier || 0).toLocaleString('id-ID');
+  document.getElementById('statTotalTransaksi').innerText = Number(data.total_transaksi || 0).toLocaleString('id-ID');
+  document.getElementById('statPendapatanHariIni').innerText = formatRupiahDashboard(data.total_pendapatan);
+  document.getElementById('statBarangTerjual').innerText = Number(data.total_barang_terjual || 0).toLocaleString('id-ID');
+  document.getElementById('statKeuntungan').innerText = formatRupiahDashboard(data.total_keuntungan);
+
+  var label = startStr === endStr ? startStr : startStr + ' s.d. ' + endStr;
+  document.getElementById('dashboardPeriodLabel').innerText = 'Ringkasan penjualan • ' + label;
+  document.getElementById('dashboardDetailSubtitle').innerText = 'Rincian barang terjual pada ' + label;
+
+  var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
+  var rows = Array.isArray(data.rincian_barang) ? data.rincian_barang : [];
+  
+  if (tbody) {
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Tidak ada penjualan pada periode ini.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(function(item) {
+        return '<tr>' +
+          '<td style="white-space:nowrap;"><b>' + escapeDashboardHtml(item.id_barang) + '</b></td>' +
+          '<td style="min-width:220px;">' + escapeDashboardHtml(item.nama_barang) + '</td>' +
+          '<td>' + Number(item.jumlah_barang || 0).toLocaleString('id-ID') + '</td>' +
+          '<td>' + Number(item.jumlah_transaksi || 0).toLocaleString('id-ID') + '</td>' +
+          '<td>' + Number(item.keuntungan || 0).toLocaleString('id-ID') + '</td>' +
+          '<td>' + Number(item.pendapatan || 0).toLocaleString('id-ID') + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }
+  document.getElementById('dashboardTableInfo').innerText = rows.length ? 'Menampilkan 1 sampai ' + rows.length + ' barang' : 'Tidak ada data';
+}
 
     function formatRupiahDashboard(value) {
       return 'Rp ' + (Number(value) || 0).toLocaleString('id-ID');
@@ -1806,63 +1976,6 @@ window.loadBarang = function(isLocalOnly = false) {
     function loadDashboardStats() {
       setDashboardDateDefaults();
       loadDashboardByDate();
-    }
-
-    function loadDashboardByDate() {
-      var dateInput = document.getElementById('dashboardDate');
-      var date = dateInput && dateInput.value ? dateInput.value : '';
-      var btn = document.getElementById('btnDashboardDate');
-      var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
-      if (!date) return alert('Silakan pilih tanggal penjualan terlebih dahulu.');
-      var branchId = "";
-      if (isOwner() && document.getElementById("dashboardPilihCabang")) {
-         branchId = document.getElementById("dashboardPilihCabang").value;
-      }
-
-      if (btn) { btn.disabled = true; btn.innerText = 'Memuat...'; }
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
-
-      google.script.run
-        .withSuccessHandler(function(data) {
-          data = data || {};
-          document.getElementById('statTotalBarang').innerText = Number(data.total_barang || 0).toLocaleString('id-ID');
-          document.getElementById('statTotalSupplier').innerText = Number(data.total_supplier || 0).toLocaleString('id-ID');
-          document.getElementById('statTotalTransaksi').innerText = Number(data.total_transaksi || 0).toLocaleString('id-ID');
-          document.getElementById('statPendapatanHariIni').innerText = formatRupiahDashboard(data.total_pendapatan);
-          document.getElementById('statBarangTerjual').innerText = Number(data.total_barang_terjual || 0).toLocaleString('id-ID');
-          document.getElementById('statKeuntungan').innerText = formatRupiahDashboard(data.total_keuntungan);
-
-          var label = data.tanggal_label || date;
-          document.getElementById('dashboardPeriodLabel').innerText = 'Ringkasan penjualan • ' + label;
-          document.getElementById('dashboardDetailSubtitle').innerText = 'Rincian barang terjual pada ' + label;
-
-          var rows = Array.isArray(data.rincian_barang) ? data.rincian_barang : [];
-          if (tbody) {
-            if (!rows.length) {
-              tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Tidak ada penjualan pada tanggal ini.</td></tr>';
-            } else {
-              tbody.innerHTML = rows.map(function(item) {
-                return '<tr>' +
-                  '<td style="white-space:nowrap;"><b>' + escapeDashboardHtml(item.id_barang) + '</b></td>' +
-                  '<td style="min-width:220px;">' + escapeDashboardHtml(item.nama_barang) + '</td>' +
-                  '<td>' + Number(item.jumlah_barang || 0).toLocaleString('id-ID') + '</td>' +
-                  '<td>' + Number(item.jumlah_transaksi || 0).toLocaleString('id-ID') + '</td>' +
-                  '<td>' + Number(item.keuntungan || 0).toLocaleString('id-ID') + '</td>' +
-                  '<td>' + Number(item.pendapatan || 0).toLocaleString('id-ID') + '</td>' +
-                '</tr>';
-              }).join('');
-            }
-          }
-          document.getElementById('dashboardTableInfo').innerText = rows.length ? 'Menampilkan 1 sampai ' + rows.length + ' barang' : 'Tidak ada data';
-          if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
-        })
-        .withFailureHandler(function(err) {
-          console.error(err);
-          if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard: ' + escapeDashboardHtml(err && err.message ? err.message : err) + '</td></tr>';
-          if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
-          alert('Gagal memuat Dashboard: ' + (err && err.message ? err.message : err));
-        })
-        .getDashboardData(date, date, branchId);
     }
 
     function loadCabang() {
@@ -2854,15 +2967,18 @@ function simpanEditItemModal() {
     }
 
     function loadRiwayat() {
-      var todayStr = new Date().toISOString().split('T')[0];
+  var todayStr = new Date().toISOString().split('T')[0];
   document.getElementById("filterRiwayatStart").value = todayStr;
   document.getElementById("filterRiwayatEnd").value = todayStr;
     
-      google.script.run.withSuccessHandler(function(data) {
-        globalRiwayatData = Array.isArray(data) ? data : [];
-        filterRiwayatTransaksi();
-      }).getPenjualan();
-    }
+  var branchId = currentUser ? currentUser.id_cabang : "";
+  var userRole = currentUser ? currentUser.role : "";
+
+  google.script.run.withSuccessHandler(function(data) {
+    globalRiwayatData = Array.isArray(data) ? data : [];
+    filterRiwayatTransaksi();
+  }).getPenjualan(branchId, userRole);
+}
 
     function parseTanggalRiwayat(value) {
       if (value instanceof Date && !isNaN(value.getTime())) return value;
@@ -4428,6 +4544,17 @@ function prosesCheckoutReturFinal() {
   if (keranjangRetur.length === 0) return alert("Keranjang kosong!");
 
   var btn = document.querySelector('#modalKeranjangRetur button[onclick*="prosesCheckoutReturFinal"]');
+
+  let activeReturBranch = currentUser ? currentUser.id_cabang : '';
+  if (typeof isOwner === 'function' && isOwner() && document.getElementById("returPilihCabang")) {
+    activeReturBranch = document.getElementById("returPilihCabang").value;
+  }
+
+  if (!activeReturBranch) {
+    alert("Pilih Cabang transaksi retur terlebih dahulu!");
+    return;
+  }
+
   if (btn) {
     btn.disabled = true;
     btn.innerText = "MEMPROSES...";
@@ -4439,27 +4566,22 @@ function prosesCheckoutReturFinal() {
   let payload = {
     petugas: petugasNama,
     metode: metode,
-    id_cabang: currentUser ? currentUser.id_cabang : '', // TAMBAHKAN BARIS INI
+    id_cabang: activeReturBranch,
     items: JSON.parse(JSON.stringify(keranjangRetur))
   };
-  
-  // Jangan tutup/ubah keranjang sebelum server benar-benar berhasil.
+
   asposGasCallPromise('simpanReturTukarTransaksi', [payload])
     .then(function(res) {
       if (!res || res.status !== 'success') {
         throw new Error((res && res.message) || 'Server tidak mengonfirmasi transaksi retur/tukar.');
       }
-
       keranjangRetur = [];
       tutupModalKeranjangRetur();
       initReturPos();
       loadBarang(true);
-
-      // Transaksi sukses tidak lagi memunculkan alert yang menghalangi layar.
     })
     .catch(function(err) {
       console.error('[AS-Pos] retur/tukar', err);
-      // Keranjang sengaja TIDAK diubah agar qty tetap ada dan transaksi bisa dicoba lagi.
       alert("Retur/tukar belum tersimpan.\n\n" + (err && err.message ? err.message : err));
     })
     .finally(function() {
@@ -5713,106 +5835,5 @@ function prosesCheckoutReturFinal() {
   </div>
 </div>
 
-<script>
-/* =========================================================
-   AS-POS IndexedDB v1.0 - DIAGNOSTIC FALLBACK
-   Pemeriksaan ini sengaja berdiri sendiri agar status database
-   tetap bisa diperiksa walaupun engine utama gagal dimuat.
-   ========================================================= */
-(function(){
-  // Buka versi aktif database; jangan pernah meminta versi lebih rendah dari database yang ada.
-  const ASDB_STORES = {
-    masterBarang:'id_barang',
-    supplier:'id_supplier',
-    promo:'id_barang',
-    stokMasuk:'id_transaksi',
-    returBarang:'id_retur',
-    riwayatPenjualan:'no_nota'
-  };
-
-  function setStatus(html){
-    const el=document.getElementById('txtDbStatus');
-    if(el) el.innerHTML=html;
-  }
-
-  function openDbFallback(){
-    return new Promise(function(resolve,reject){
-      if(!window.indexedDB) return reject(new Error('Browser ini tidak mendukung IndexedDB.'));
-      let done=false;
-      const finish=function(fn,value){
-        if(done)return;
-        done=true;
-        fn(value);
-      };
-      let req;
-      try{
-        req=indexedDB.open('AS_POS_DB');
-        req.onupgradeneeded=function(e){
-          const d=e.target.result;
-          Object.keys(ASDB_STORES).forEach(function(name){
-            if(!d.objectStoreNames.contains(name)){
-              d.createObjectStore(name,{keyPath:ASDB_STORES[name]});
-            }
-          });
-        };
-        req.onsuccess=function(e){ finish(resolve,e.target.result); };
-        req.onerror=function(e){ finish(reject,e.target.error||new Error('IndexedDB gagal dibuka.')); };
-        req.onblocked=function(){ console.warn('[AS-POS DB v1.0] open blocked'); };
-      }catch(err){ finish(reject,err); }
-    });
-  }
-
-  function countStore(db,name){
-    return new Promise(function(resolve,reject){
-      try{
-        const tx=db.transaction(name,'readonly');
-        const req=tx.objectStore(name).count();
-        req.onsuccess=function(){resolve(req.result||0);};
-        req.onerror=function(){reject(req.error||new Error('Gagal membaca '+name));};
-      }catch(err){reject(err);}
-    });
-  }
-
-  async function diagnostic(){
-    setStatus('<span style="color:#64748b;">Database lokal: memeriksa IndexedDB v1.0...</span>');
-    try{
-      const database=await openDbFallback();
-      const names=Object.keys(ASDB_STORES);
-      const counts={};
-      for(const name of names) counts[name]=await countStore(database,name);
-      const total=names.reduce(function(s,n){return s+counts[n];},0);
-      database.close();
-
-      if(total>0){
-        setStatus(
-          '<b style="color:#198754;">✅ Database lokal AKTIF — IndexedDB v1.0</b><br>'+
-          'Total data: <b>'+total.toLocaleString('id-ID')+'</b> record<br>'+
-          'Master Barang: <b>'+counts.masterBarang.toLocaleString('id-ID')+'</b> • '+
-          'Supplier: <b>'+counts.supplier.toLocaleString('id-ID')+'</b><br>'+
-          '<span style="color:#087f8c;">Database berhasil dibuka oleh pemeriksaan cadangan.</span>'
-        );
-      }else{
-        setStatus(
-          '<b style="color:#d97706;">⚠️ Database lokal AKTIF — IndexedDB v1.0</b><br>'+
-          'Database berhasil dibuka tetapi masih kosong.<br>'+
-          'Silakan tekan <b>Sinkronkan Data</b> untuk mengambil data dari Google Sheets.'
-        );
-      }
-    }catch(err){
-      console.error('[AS-POS DB v1.0] diagnostic',err);
-      setStatus(
-        '<b style="color:#dc3545;">❌ IndexedDB v1.0 gagal dibuka</b><br>'+
-        String(err&&err.message?err.message:err)
-      );
-    }
-  }
-
-  window.asposDbDiagnosticV1=diagnostic;
-
-  setTimeout(function(){
-    diagnostic();
-  },1500);
-})();
-</script>
 </body>
 </html>
