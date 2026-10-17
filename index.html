@@ -1827,22 +1827,44 @@ async function loadDashboardByDate() {
         if (!Array.isArray(reportRows) && reportRows && Array.isArray(reportRows.data)) reportRows = reportRows.data;
         if (!Array.isArray(reportRows) && reportRows && Array.isArray(reportRows.items)) reportRows = reportRows.items;
         if (!Array.isArray(reportRows)) reportRows = [];
+        var masterForReturns = [];
+        try {
+          var dbReadyForReturns = await asposEnsureIndexedDB();
+          if (dbReadyForReturns) masterForReturns = await getAllFromStore('masterBarang') || [];
+        } catch (masterErr) {
+          console.warn('[AS-Pos] Harga pokok barang retur tidak tersedia dari IndexedDB:', masterErr);
+        }
+        var masterCostById = {};
+        masterForReturns.forEach(function(goods) {
+          var goodsId = String(goods.id_barang || '').trim();
+          if (goodsId) masterCostById[goodsId] = Number(goods.harga_beli || goods.harga_modal || goods.hpp || 0) || 0;
+        });
         var returnItems = reportRows.filter(function(row) {
           var rowQty = row.qty !== undefined ? row.qty : (row.total_qty !== undefined ? row.total_qty : row.jumlah_barang);
           return (Number(rowQty) || 0) < 0;
         }).map(function(row) {
           var qty = Number(row.qty !== undefined ? row.qty : (row.total_qty !== undefined ? row.total_qty : row.jumlah_barang)) || 0;
           var subtotal = Number(row.subtotal !== undefined ? row.subtotal : row.total_pendapatan);
-          if (!Number.isFinite(subtotal) || subtotal === 0) {
-            subtotal = (Number(row.harga_satuan || row.harga_jual || row.harga || row.harga_barang) || 0) * qty;
+          var unitPrice = Number(row.harga_satuan || row.harga_jual || row.harga || row.harga_barang) || 0;
+          if (!Number.isFinite(subtotal) || subtotal === 0) subtotal = unitPrice * qty;
+          var id = String(row.id_barang || '').trim();
+          var hpp = Number(row.harga_beli || row.harga_modal || row.hpp);
+          if (!Number.isFinite(hpp) || hpp <= 0) hpp = Number(masterCostById[id]) || 0;
+          // Laba yang dibalik saat retur adalah laba per unit (harga jual - HPP),
+          // bukan seluruh nilai penjualan barang. Qty retur negatif membalik laba.
+          var profitPerUnit = unitPrice - hpp;
+          var profitReturn = profitPerUnit * qty;
+          if (row.keuntungan !== undefined && row.keuntungan !== null && row.keuntungan !== '') {
+            var reportedProfit = Number(row.keuntungan);
+            if (Number.isFinite(reportedProfit)) profitReturn = reportedProfit < 0 ? reportedProfit : -Math.abs(reportedProfit);
           }
           return {
-            id_barang: String(row.id_barang || '').trim(),
+            id_barang: id,
             nama_barang: row.nama_barang || row.id_barang || 'Barang retur',
             jumlah_barang: qty,
             jumlah_transaksi: 0,
             pendapatan: subtotal,
-            keuntungan: subtotal
+            keuntungan: profitReturn
           };
         }).filter(function(row) { return !!row.id_barang; });
         var map = {};
