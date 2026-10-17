@@ -6168,9 +6168,11 @@ function prosesCheckoutReturFinal() {
         var serverKeys = new Set(serverNormalized.map(function(r) { return String(r.no_nota || '').trim(); }).filter(Boolean));
         var localNormalized = localRows.map(asposNormalizeRiwayatRow);
         var localOnly = localNormalized.filter(function(r) {
+          // Hanya transaksi pending yang belum terkirim boleh ditambahkan dari lokal.
+          // Cache lama yang tidak punya status sinkron dan tidak ditemukan di server
+          // jangan ditampilkan sebagai transaksi Rp 0 / undefined.
           var status = String(r.sync_status || r.status || '').toUpperCase();
-          var nota = String(r.no_nota || '').trim();
-          return status === 'PENDING' || (nota && !serverKeys.has(nota));
+          return status === 'PENDING';
         });
 
         globalRiwayatData = serverError
