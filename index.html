@@ -3531,18 +3531,38 @@ function simpanEditItemModal() {
             console.warn('[AS-Pos] Tidak dapat melengkapi detail retur:', err);
           }
           if (mode === 'rekap') {
+            // Rekap harus dihitung dari baris transaksi per barang, bukan dari
+            // hasil rekap server yang kemudian dicampur dengan detail retur.
+            // Gabungkan per ID barang + supplier agar harga berbeda tidak membuat
+            // baris produk ganda, dan retur mengurangi qty serta pembayaran.
             var grouped = {};
             rows.forEach(function(item) {
-              var key = [item.id_barang, item.supplier, item.harga_satuan].join('|||');
+              var id = String(item.id_barang || '').trim();
+              if (!id) return;
+              var supplier = String(item.supplier || '').trim();
+              var key = [id, supplier].join('|||');
+              var qty = Number(item.qty !== undefined ? item.qty : item.total_qty) || 0;
+              var price = Number(item.harga_satuan) || 0;
+              var subtotal = Number(item.subtotal !== undefined ? item.subtotal : item.total_pendapatan) || 0;
               if (!grouped[key]) grouped[key] = {
-                id_barang: item.id_barang, nama_barang: item.nama_barang,
-                supplier: item.supplier, harga_satuan: item.harga_satuan,
-                total_qty: 0, total_pendapatan: 0
+                id_barang: id, nama_barang: item.nama_barang || id,
+                supplier: supplier, harga_satuan: price,
+                total_qty: 0, total_pendapatan: 0, total_brutto: 0
               };
-              grouped[key].total_qty += Number(item.qty) || 0;
-              grouped[key].total_pendapatan += Number(item.subtotal) || 0;
+              grouped[key].total_qty += qty;
+              grouped[key].total_pendapatan += subtotal;
+              grouped[key].total_brutto += price * qty;
+              if (!grouped[key].harga_satuan && price) grouped[key].harga_satuan = price;
             });
-            renderAdvancedReport(Object.keys(grouped).map(function(key) { return grouped[key]; }));
+            renderAdvancedReport(Object.keys(grouped).map(function(key) {
+              var item = grouped[key];
+              // Render memakai harga_satuan * total_qty untuk brutto. Simpan
+              // brutto terhitung sebagai nilai per-unit ekuivalen agar harga jual
+              // historis berbeda tetap menghasilkan jumlah brutto yang tepat.
+              if (item.total_qty !== 0) item.harga_satuan = item.total_brutto / item.total_qty;
+              else item.harga_satuan = 0;
+              return item;
+            }));
           } else {
             renderAdvancedReport(rows);
           }
@@ -3552,7 +3572,7 @@ function simpanEditItemModal() {
           if (tbody) tbody.innerHTML = '<tr><td style="text-align:center;color:#dc3545;padding:20px;">Laporan gagal dimuat. Sinkronkan data lalu coba kembali.</td></tr>';
           console.error('[AS-Pos] Laporan penjualan barang:', err);
         })
-        .getLaporanPenjualanBarangAdvanced(start, end, mode === 'supplier' ? 'transaksi' : mode, branchId);
+        .getLaporanPenjualanBarangAdvanced(start, end, (mode === 'supplier' || mode === 'rekap') ? 'transaksi' : mode, branchId);
     }
 
     function exportPenjualanPerBarangExcel(isShare = false) {
