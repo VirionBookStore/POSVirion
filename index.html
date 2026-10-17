@@ -3676,7 +3676,7 @@ function simpanEditItemModal() {
         } else {
           XLSX.writeFile(workbook, filename);
         }
-      }).getLaporanPenjualanBarangAdvanced(start, end, mode === 'supplier' ? 'transaksi' : mode, branchId);
+      }).getLaporanPenjualanBarangAdvanced(start, end, (mode === 'rekap' || mode === 'supplier') ? 'transaksi' : mode, branchId);
     } // <--- ini adalah penutup fungsi exportPenjualanPerBarangExcel
 
     function filterTable() {
