@@ -2032,7 +2032,13 @@ function renderDashboardUI(data, startStr, endStr) {
   document.getElementById('statTotalTransaksi').innerText = Number(data.total_transaksi || 0).toLocaleString('id-ID');
   document.getElementById('statPendapatanHariIni').innerText = formatRupiahDashboard(data.total_pendapatan);
   document.getElementById('statBarangTerjual').innerText = Number(data.total_barang_terjual || 0).toLocaleString('id-ID');
-  document.getElementById('statKeuntungan').innerText = formatRupiahDashboard(data.total_keuntungan);
+  // Samakan kartu keuntungan dengan jumlah keuntungan pada rincian barang yang
+  // ditampilkan di bawahnya, termasuk koreksi laba dari retur/tukar.
+  var detailRowsForProfit = Array.isArray(data.rincian_barang) ? data.rincian_barang : [];
+  var profitFromDetails = detailRowsForProfit.reduce(function(total, item) {
+    return total + (Number(item.keuntungan) || 0);
+  }, 0);
+  document.getElementById('statKeuntungan').innerText = formatRupiahDashboard(profitFromDetails);
 
   var label = startStr === endStr ? startStr : startStr + ' s.d. ' + endStr;
   document.getElementById('dashboardPeriodLabel').innerText = 'Ringkasan penjualan • ' + label;
