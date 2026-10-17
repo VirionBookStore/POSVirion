@@ -1583,7 +1583,7 @@
     /* AS-POS ROLE: OWNER / ADMIN / USER */
     const AS_POS_ROLE_PERMISSIONS = {
       OWNER:{menus:['dashboard','masterBarang','supplier','cabang','promoManajemen','posKasir','returPos','riwayatPenjualan','riwayatPerBarang','stokMasuk','returBarang','manajemenData','dataPendingOwner']},
-      ADMIN:{menus:['dashboard','masterBarang','cabang','promoManajemen','posKasir','returPos','stokMasuk','returBarang','manajemenData']},
+      ADMIN:{menus:['dashboard','masterBarang','promoManajemen','posKasir','returPos','stokMasuk','returBarang','manajemenData']},
       USER:{menus:['masterBarang','posKasir','stokMasuk','returBarang','manajemenData']}
     };
     function normalizeRole(role){return String(role||'').trim().toUpperCase();}
