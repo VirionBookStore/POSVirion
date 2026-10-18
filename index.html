@@ -6859,7 +6859,7 @@ function prosesCheckoutReturFinal() {
     // Periksa koneksi dan data melalui menu Manajemen Database Lokal.
     </script>
   <!-- Edit harga dan diskon per item retur/tukar -->
-<div id="modalEditItemRetur" class="modal">
+<div id="modalEditItemRetur" class="modal" style="z-index:10050 !important;">
   <div class="modal-content" style="max-width:420px;border-radius:12px;">
     <div class="modal-header" style="background:#dc3545;color:#fff;">
       <h3 style="margin:0;font-size:16px;">Ubah Harga / Potongan Retur</h3>
@@ -6914,7 +6914,9 @@ function bukaModalEditItemRetur(idx) {
   document.getElementById('editItemReturUseDisc').checked = Number(item.disc_val) > 0;
   document.getElementById('editItemReturDiscVal').value = Number(item.disc_val) || 0;
   document.getElementById('editItemReturDiscType').value = item.disc_type || 'Rp';
-  document.getElementById('modalEditItemRetur').style.display = 'flex';
+  const editModal = document.getElementById('modalEditItemRetur');
+  editModal.style.display = 'flex';
+  editModal.style.zIndex = '10050';
   hitungEditItemRetur();
 }
 function tutupModalEditItemRetur() {
