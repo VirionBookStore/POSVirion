@@ -1859,6 +1859,35 @@ async function loadDashboardByDate() {
 
   if (!startStr || !endStr) return alert('Silakan pilih rentang tanggal penjualan terlebih dahulu.');
 
+  // Tampilkan cache dashboard seketika saat menu dibuka kembali, lalu segarkan
+  // di latar belakang agar angka terbaru (termasuk retur) tetap benar.
+  var dashboardCacheKey = 'aspos_dashboard_cache_v1_' + String(branchId || 'Semua') + '_' + startStr + '_' + endStr;
+  var hasDashboardCache = false;
+  try {
+    var cachedDashboard = localStorage.getItem(dashboardCacheKey);
+    if (cachedDashboard) {
+      var cachedPayload = JSON.parse(cachedDashboard);
+      if (cachedPayload && cachedPayload.data) {
+        renderDashboardUI(cachedPayload.data, startStr, endStr);
+        hasDashboardCache = true;
+      }
+    }
+  } catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard tidak dapat dibaca:', cacheErr); }
+
+  if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Perbarui' : 'Memuat...'; }
+  if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
+
+  google.script.run
+    .withSuccessHandler(async function(data) {
+  var startStr = document.getElementById('dashboardStartDate') ? document.getElementById('dashboardStartDate').value : '';
+  var endStr = document.getElementById('dashboardEndDate') ? document.getElementById('dashboardEndDate').value : '';
+  var btn = document.getElementById('btnDashboardDate');
+  var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
+  var branchEl = document.getElementById("dashboardPilihCabang");
+  var branchId = (isOwner() && branchEl) ? branchEl.value : (currentUser ? currentUser.id_cabang : '');
+
+  if (!startStr || !endStr) return alert('Silakan pilih rentang tanggal penjualan terlebih dahulu.');
+
   // Dashboard harus memakai agregasi server yang sudah memperhitungkan
   // transaksi penjualan, retur, dan tukar barang. Cache IndexedDB dapat tertinggal
   // atau tidak memuat detail retur, sehingga tidak boleh menjadi sumber angka final.
@@ -1942,6 +1971,8 @@ async function loadDashboardByDate() {
         console.warn('[AS-Pos] Rincian retur Dashboard tidak dapat dilengkapi:', err);
       }
       renderDashboardUI(data, startStr, endStr);
+      try { localStorage.setItem(dashboardCacheKey, JSON.stringify({savedAt: Date.now(), data: data})); }
+      catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard tidak dapat disimpan:', cacheErr); }
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
     })
     .withFailureHandler(function(err) {
