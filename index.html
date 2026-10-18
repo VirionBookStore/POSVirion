@@ -3065,6 +3065,12 @@ function simpanEditItemModal() {
     }
 
     function konfirmasiPembayaran() {
+      // Cegah klik BAYAR berulang saat penyimpanan lokal/sinkronisasi sedang berjalan.
+      if (window.asposCheckoutSaving) {
+        alert('Pembayaran sedang diproses. Mohon tunggu sampai penyimpanan selesai.');
+        return;
+      }
+
       // Validasi ulang stok tepat sebelum transaksi disimpan, bukan hanya saat barang
       // pertama kali dimasukkan ke keranjang.
       const stockErrors = [];
@@ -3149,6 +3155,7 @@ function simpanEditItemModal() {
         items: itemsToSave 
       };
 
+      window.asposCheckoutSaving = true;
       closeModalPembayaran();
       tampilkanStruk(lastTransaksi);
       keranjang = [];
@@ -3161,12 +3168,14 @@ function simpanEditItemModal() {
       // LOCAL-FIRST: simpan transaksi ke IndexedDB terlebih dahulu.
       // Dengan begitu transaksi tetap aman walaupun internet sedang putus.
       saveTransactionLocalFirst(payload, lastTransaksi).then(function(result) {
+        window.asposCheckoutSaving = false;
         if (result && result.no_nota) {
           lastTransaksi.no_nota = result.no_nota;
           var notaEl = document.getElementById("strukNoNota");
           if (notaEl) notaEl.innerText = result.no_nota;
         }
       }).catch(function(err) {
+        window.asposCheckoutSaving = false;
         console.error('[AS-Pos] transaksi lokal gagal', err);
         alert('Transaksi belum dapat disimpan ke database lokal. Transaksi TIDAK dikirim ke server.\\n\\n' + (err && err.message ? err.message : err));
       });
