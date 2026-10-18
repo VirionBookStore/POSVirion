@@ -1723,40 +1723,68 @@
         currentUser = null;
       }
     }
-// Memaksa fungsi loadBarang ke global agar selalu bisa dipanggil
-window.loadBarang = function(isLocalOnly = false) {
-  // Coba muat dari IndexedDB terlebih dahulu (LOCAL FIRST)
-  if (typeof initIndexedDB === 'function') {
-    initIndexedDB(function(ok) {
-      if (ok && db) {
-        getAllFromStore('masterBarang').then(function(data) {
-          if (data && data.length > 0) {
-            globalDataBarang = data;
-            if (typeof renderTabelBarang === 'function') renderTabelBarang(data);
-            if (typeof renderPosProductList === 'function') renderPosProductList();
-          }
-        }).catch(e => console.warn(e));
-      }
-    });
+// Tahap 1 — Master Barang: tampilkan cache cabang aktif lebih dulu,
+// lalu perbarui dari GAS di latar belakang. Cache cabang lain tidak dipakai.
+window.loadBarang = async function(isLocalOnly = false) {
+  var branchId = currentUser ? (currentUser.id_cabang || '') : '';
+  var cacheBranch = localStorage.getItem('aspos_master_branch');
+  var ready = false;
+  var localData = [];
+
+  function tampilkan(data) {
+    globalDataBarang = Array.isArray(data) ? data : [];
+    if (typeof renderTabelBarang === 'function') renderTabelBarang(globalDataBarang);
+    if (typeof renderPosProductList === 'function') renderPosProductList();
   }
 
-  if (!isLocalOnly) {
-    let branchId = currentUser ? currentUser.id_cabang : "";
-    google.script.run.withSuccessHandler(function(serverData) {
-      if (serverData && serverData.length > 0) {
-        globalDataBarang = serverData;
-        
-        // Simpan ke IndexedDB jika tersedia
-        if (typeof initIndexedDB === 'function') {
-          initIndexedDB(function(ok) {
-            if (ok && db) replaceStore('masterBarang', serverData);
-          });
-        }
-        
-        if (typeof renderTabelBarang === 'function') renderTabelBarang(serverData);
-        if (typeof renderPosProductList === 'function') renderPosProductList();
+  try {
+    ready = await asposEnsureIndexedDB();
+    if (ready && String(cacheBranch || '') === String(branchId || '')) {
+      try { localData = await getAllFromStore('masterBarang'); } catch (e) {
+        console.warn('[AS-Pos] Gagal membaca cache Master Barang:', e);
       }
-    }).getBarang(branchId);
+    }
+    if (localData.length) tampilkan(localData);
+    else {
+      var tbody = document.querySelector('#tabelBarang tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#6c757d;">' +
+        (ready ? 'Memuat Master Barang…' : 'Membuka database lokal…') + '</td></tr>';
+    }
+  } catch (e) {
+    console.warn('[AS-Pos] Inisialisasi cache Master Barang:', e);
+  }
+
+  if (isLocalOnly) {
+    if (!localData.length) {
+      var emptyBody = document.querySelector('#tabelBarang tbody');
+      if (emptyBody) emptyBody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#856404;">Data Master Barang belum tersimpan di perangkat ini. Hubungkan ke server untuk sinkronisasi awal.</td></tr>';
+    }
+    return;
+  }
+
+  try {
+    var serverData = await asposCallGasLocalFirst('getBarang', [branchId]);
+    if (!Array.isArray(serverData)) {
+      if (serverData && Array.isArray(serverData.data)) serverData = serverData.data;
+      else if (serverData && Array.isArray(serverData.items)) serverData = serverData.items;
+      else throw new Error('Respons getBarang bukan array data.');
+    }
+    if (ready) {
+      try {
+        await replaceStore('masterBarang', serverData);
+        localStorage.setItem('aspos_master_branch', String(branchId || ''));
+      } catch (e) {
+        console.warn('[AS-Pos] Gagal menyimpan sinkronisasi Master Barang:', e);
+      }
+    }
+    tampilkan(serverData);
+    console.info('[AS-Pos] Master Barang diperbarui dari server:', serverData.length, 'data');
+  } catch (err) {
+    console.warn('[AS-Pos] Sinkronisasi Master Barang gagal; data lokal tetap digunakan:', err);
+    if (!localData.length) {
+      var body = document.querySelector('#tabelBarang tbody');
+      if (body) body.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#dc3545;">Master Barang belum tersedia di lokal dan server tidak dapat dihubungi. Periksa koneksi lalu buka kembali tab ini.</td></tr>';
+    }
   }
 };
     
