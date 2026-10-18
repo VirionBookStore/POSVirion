@@ -2262,7 +2262,7 @@ function renderDashboardUI(data, startStr, endStr) {
             '<td style="white-space:nowrap;"><b>' + (item.id_barang || '') + '</b></td>' +
             '<td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.supplier || '') + '">' + (item.supplier || '') + '</td>' +
             '<td style="min-width:150px;">' + (item.nama_barang || '') + '</td>' +
-            '<td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.kategori || '-') + '">' + (item.kategori || '-') + '</td>' +
+            '<td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.id_cabang || item.kategori || '-') + '">' + (item.id_cabang || item.kategori || '-') + '</td>' +
             '<td style="white-space:nowrap;">Rp ' + Number(item.harga_jual || 0).toLocaleString('id-ID') + '</td>' +
             '<td style="white-space:nowrap;">Rp ' + Number(item.harga_beli || 0).toLocaleString('id-ID') + '</td>' +
             '<td><b>' + (item.stok ?? 0) + '</b></td>' +
@@ -3839,9 +3839,21 @@ function simpanEditItemModal() {
     } // <--- ini adalah penutup fungsi exportPenjualanPerBarangExcel
 
     function filterTable() {
-      var keyword = document.getElementById("searchInput").value.toLowerCase();
-      var filtered = globalDataBarang.filter(i => (i.nama_barang && i.nama_barang.toLowerCase().includes(keyword)) || (i.id_barang && i.id_barang.toLowerCase().includes(keyword)));
-      renderTabelBarang(filtered);
+      var input = document.getElementById("searchInput");
+      var keyword = String(input ? input.value : '').trim().toLocaleLowerCase('id-ID');
+      var source = Array.isArray(globalDataBarang) ? globalDataBarang : [];
+      var filtered = !keyword ? source : source.filter(function(item) {
+        return String(item.nama_barang || '').toLocaleLowerCase('id-ID').includes(keyword) ||
+          String(item.id_barang || '').toLocaleLowerCase('id-ID').includes(keyword) ||
+          String(item.supplier || '').toLocaleLowerCase('id-ID').includes(keyword) ||
+          String(item.kategori || '').toLocaleLowerCase('id-ID').includes(keyword) ||
+          String(item.id_cabang || '').toLocaleLowerCase('id-ID').includes(keyword);
+      });
+      // Jangan ubah globalDataBarang saat pencarian; data lengkap tetap dipakai
+      // untuk edit, POS, dan sinkronisasi. Render hanya halaman hasil pencarian.
+      masterBarangViewData = filtered;
+      masterBarangCurrentPage = 1;
+      renderHalamanMasterBarang();
     }
 
     function switchMode(mode, isEdit = false) {
