@@ -5123,7 +5123,16 @@ function prosesCheckoutReturFinal() {
     petugas: petugasNama,
     metode: metode,
     id_cabang: activeReturBranch,
-    items: JSON.parse(JSON.stringify(keranjangRetur))
+    items: keranjangRetur.map(function(item) {
+      const copy = JSON.parse(JSON.stringify(item));
+      const price = Math.max(0, Number(copy.harga_jual) || 0);
+      const qty = Math.max(0, Number(copy.qty) || 0);
+      const val = Math.max(0, Number(copy.disc_val) || 0);
+      const discPerUnit = copy.disc_type === '%' ? price * Math.min(100, val) / 100 : Math.min(price, val);
+      copy.subtotal = Math.max(0, Math.round((price - discPerUnit) * qty));
+      copy.total_diskon = Math.round(discPerUnit * qty);
+      return copy;
+    })
   };
 
   asposGasCallPromise('simpanReturTukarTransaksi', [payload])
