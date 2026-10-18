@@ -1668,7 +1668,10 @@
       // Pastikan halaman yang aktif juga mengikuti role. Ini penting karena
       // Dashboard memiliki class "active" dari HTML awal dan sebelumnya bisa
       // tampil sesaat untuk USER walaupun menu Dashboard sudah disembunyikan.
-      const initialMenu = cfg.menus.includes('dashboard') ? 'dashboard' : 'posKasir';
+      // Pulihkan tab terakhir setelah refresh hanya jika role saat ini diizinkan.
+      let savedMenu = '';
+      try { savedMenu = localStorage.getItem('as_pos_last_menu') || ''; } catch (e) {}
+      const initialMenu = cfg.menus.includes(savedMenu) ? savedMenu : (cfg.menus.includes('dashboard') ? 'dashboard' : 'posKasir');
       document.querySelectorAll('.page-section').forEach(function(secEl){ secEl.classList.remove('active'); });
       const initialSection = document.getElementById('sec-' + initialMenu);
       if(initialSection) initialSection.classList.add('active');
@@ -1806,6 +1809,8 @@ window.loadBarang = async function(isLocalOnly = false) {
       
       if (el) el.classList.add('active');
       document.getElementById('sec-' + menuId).classList.add('active');
+      // Simpan tab aktif agar refresh atau buka ulang halaman kembali ke menu ini.
+      try { localStorage.setItem('as_pos_last_menu', menuId); } catch (e) {}
 
       if (menuId === 'masterBarang') loadBarang();
       if (menuId === 'cabang') loadCabang();
@@ -1869,7 +1874,10 @@ window.loadBarang = async function(isLocalOnly = false) {
       // -------------------------------------------
 
       const role = normalizeRole(currentUser && currentUser.role);
-      const defaultMenu = role === 'USER' ? 'posKasir' : 'dashboard';
+      const allowedMenus = (AS_POS_ROLE_PERMISSIONS[role] || {menus:[]}).menus;
+      let savedMenu = '';
+      try { savedMenu = localStorage.getItem('as_pos_last_menu') || ''; } catch (e) {}
+      const defaultMenu = allowedMenus.includes(savedMenu) ? savedMenu : (role === 'USER' ? 'posKasir' : 'dashboard');
       const defaultLink = Array.from(document.querySelectorAll('.sidebar-menu a')).find(function(a) {
         return String(a.getAttribute('onclick') || '').indexOf("switchMenu('" + defaultMenu + "'") !== -1;
       });
