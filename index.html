@@ -6558,5 +6558,54 @@ function prosesCheckoutReturFinal() {
   </div>
 </div>
 
+
+<!-- Notifikasi modern pengganti alert bawaan browser -->
+<style>
+#asposNoticeOverlay{position:fixed;inset:0;z-index:200000;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:22px;backdrop-filter:blur(3px)}
+#asposNoticeCard{width:min(100%,390px);background:#fff;border-radius:20px;box-shadow:0 22px 70px rgba(0,0,0,.25);overflow:hidden;transform:translateY(8px);animation:asposNoticeIn .18s ease-out forwards;color:#1f2937;font-family:inherit}
+#asposNoticeTop{padding:20px 22px 14px;display:flex;align-items:center;gap:12px}
+#asposNoticeIcon{width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#e5f6ed;color:#07834e;font-size:22px;font-weight:800;flex-shrink:0}
+#asposNoticeTitle{font-size:18px;font-weight:800;line-height:1.25}
+#asposNoticeMessage{padding:0 22px 22px;font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+#asposNoticeActions{padding:0 22px 20px;display:flex;justify-content:flex-end}
+#asposNoticeOk{border:0;border-radius:12px;padding:11px 24px;background:#07834e;color:#fff;font-weight:750;font-size:14px;min-width:92px;box-shadow:0 5px 14px rgba(7,131,78,.2)}
+#asposNoticeOk:active{transform:scale(.98)}
+@keyframes asposNoticeIn{to{transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){#asposNoticeCard{animation:none;transform:none}}
+</style>
+<div id="asposNoticeOverlay" role="dialog" aria-modal="true" aria-labelledby="asposNoticeTitle">
+  <div id="asposNoticeCard">
+    <div id="asposNoticeTop"><div id="asposNoticeIcon">!</div><div id="asposNoticeTitle">Pemberitahuan</div></div>
+    <div id="asposNoticeMessage"></div>
+    <div id="asposNoticeActions"><button type="button" id="asposNoticeOk">Mengerti</button></div>
+  </div>
+</div>
+<script>
+(function(){
+  var originalAlert = window.alert ? window.alert.bind(window) : function(){};
+  window.alert = function(message) {
+    var overlay = document.getElementById('asposNoticeOverlay');
+    var msg = document.getElementById('asposNoticeMessage');
+    var ok = document.getElementById('asposNoticeOk');
+    if (!overlay || !msg || !ok) { originalAlert(message); return; }
+    msg.textContent = String(message == null ? '' : message);
+    overlay.style.display = 'flex';
+    ok.focus();
+  };
+  function closeNotice() {
+    var overlay = document.getElementById('asposNoticeOverlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.id === 'asposNoticeOk') closeNotice();
+    if (e.target && e.target.id === 'asposNoticeOverlay') closeNotice();
+  });
+  document.addEventListener('keydown', function(e) {
+    var overlay = document.getElementById('asposNoticeOverlay');
+    if (e.key === 'Escape' && overlay && overlay.style.display === 'flex') closeNotice();
+  });
+})();
+</script>
+
 </body>
 </html>
