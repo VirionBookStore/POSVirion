@@ -3263,16 +3263,53 @@ function simpanEditItemModal() {
     }
 
     function loadRiwayat() {
-  var todayStr = new Date().toISOString().split('T')[0];
-  document.getElementById("filterRiwayatStart").value = todayStr;
-  document.getElementById("filterRiwayatEnd").value = todayStr;
-    
+  var today = new Date();
+  var todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  var startEl = document.getElementById("filterRiwayatStart");
+  var endEl = document.getElementById("filterRiwayatEnd");
+  if (startEl) startEl.value = todayStr;
+  if (endEl) endEl.value = todayStr;
+
   var branchId = currentUser ? currentUser.id_cabang : "";
   var userRole = currentUser ? currentUser.role : "";
 
-  google.script.run.withSuccessHandler(function(data) {
-    globalRiwayatData = Array.isArray(data) ? data : [];
+  google.script.run.withSuccessHandler(async function(data) {
+    var serverRows = Array.isArray(data) ? data : [];
+    var mergedRows = serverRows.slice();
+    try {
+      await new Promise(function(resolve, reject) {
+        initIndexedDB(function(ok) { ok ? resolve() : reject(new Error('Database lokal belum tersedia.')); });
+      });
+      var localRows = await getAllFromStore('riwayatPenjualan');
+      var seen = new Set(serverRows.map(function(r) { return String(r.no_nota || '').trim(); }).filter(Boolean));
+      localRows.forEach(function(r) {
+        // Hanya tampilkan transaksi lokal yang belum dikonfirmasi tersimpan di server.
+        if (String(r.sync_status || '').toUpperCase() !== 'PENDING') return;
+        var nota = String(r.no_nota || '').trim();
+        if (!nota || seen.has(nota)) return;
+        var localBranch = String(r.id_cabang || '').trim();
+        var requestedBranch = String(branchId || '').trim();
+        if (requestedBranch && localBranch && localBranch !== requestedBranch) return;
+        mergedRows.push(r);
+        seen.add(nota);
+      });
+    } catch(err) {
+      console.warn('[AS-Pos] Riwayat lokal belum dapat dibaca:', err);
+    }
+    globalRiwayatData = mergedRows;
     filterRiwayatTransaksi();
+  }).withFailureHandler(function(err) {
+    console.error('[AS-Pos] Gagal memuat riwayat server:', err);
+    // Saat server gagal, tetap tampilkan riwayat lokal yang belum tersinkron.
+    initIndexedDB(async function(ok) {
+      if (!ok) { globalRiwayatData = []; filterRiwayatTransaksi(); return; }
+      try {
+        globalRiwayatData = (await getAllFromStore('riwayatPenjualan')).filter(function(r) {
+          return String(r.sync_status || '').toUpperCase() === 'PENDING';
+        });
+      } catch(e) { globalRiwayatData = []; }
+      filterRiwayatTransaksi();
+    });
   }).getPenjualan(branchId, userRole);
 }
 
@@ -3341,7 +3378,7 @@ function simpanEditItemModal() {
     var potongan = Number(r.potongan) || 0;
     var formatPotongan = potongan > 0 ? fmt(potongan) : "-";
     tr.innerHTML = `
-      <td><b>${r.no_nota}</b></td>
+      <td><b>${r.no_nota}</b>${String(r.sync_status || '').toUpperCase() === 'PENDING' ? ' <span style="display:inline-block;margin-left:4px;padding:2px 5px;border-radius:8px;background:#fff3cd;color:#856404;font-size:10px;">Belum sinkron</span>' : ''}</td>
       <td>${r.tanggal}</td>
       <td style="color:#dc3545; font-weight:bold;">${formatPotongan}</td>
       <td>${r.total_item}</td>
@@ -5514,6 +5551,8 @@ function prosesCheckoutReturFinal() {
       const localHistory = Object.assign({}, displayData || {}, {
         no_nota: localNoNota,
         clientTransactionId: clientTransactionId,
+        id_cabang: String(payload.id_cabang || (displayData && displayData.id_cabang) || ''),
+        nama_cabang: String(payload.nama_cabang || (displayData && displayData.nama_cabang) || ''),
         sync_status: 'PENDING',
         tanggal: (displayData && displayData.tanggal) || new Date().toLocaleString('id-ID')
       });
