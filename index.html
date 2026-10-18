@@ -5145,10 +5145,31 @@ function prosesCheckoutReturFinal() {
       keranjangRetur = [];
       tutupModalKeranjangRetur();
       renderKeranjangRetur();
+      // Jangan menunggu dua pemuatan katalog berurutan setelah transaksi sukses.
+      // Perbarui stok yang sedang tampil secara lokal, lalu render ulang segera.
+      const savedBranch = String(activeReturBranch || '').trim();
+      keranjangRetur.forEach(function() {}); // keranjang sudah dikosongkan setelah sukses
+      try {
+        const lastPayloadItems = payload.items || [];
+        const selectedBranch = String((isOwner() && document.getElementById('returPilihCabang')) ? document.getElementById('returPilihCabang').value : (currentUser ? currentUser.id_cabang : '') || '').trim();
+        if (selectedBranch === savedBranch) {
+          lastPayloadItems.forEach(function(it) {
+            const row = (Array.isArray(globalDataBarang) ? globalDataBarang : []).find(function(b) {
+              return String(b.id_barang || '').trim() === String(it.id_barang || '').trim();
+            });
+            if (row) {
+              const qty = Number(it.qty) || 0;
+              if (it.mode === 'retur') row.stok = (Number(row.stok) || 0) + qty;
+              else row.stok = Math.max(0, (Number(row.stok) || 0) - qty);
+            }
+          });
+          renderReturProductList();
+        }
+      } catch(refreshErr) { console.warn('[AS-Pos] pembaruan stok lokal:', refreshErr); }
+      // Sinkronisasi katalog dijalankan terpisah dan tidak menahan tombol transaksi.
       setTimeout(function() {
         try { initReturPos(); } catch(refreshErr) { console.warn('[AS-Pos] refresh katalog retur:', refreshErr); }
-        try { loadBarang(true); } catch(refreshErr) { console.warn('[AS-Pos] refresh master barang:', refreshErr); }
-      }, 0);
+      }, 50);
     })
     .catch(function(err) {
       console.error('[AS-Pos] retur/tukar', err);
