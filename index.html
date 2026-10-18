@@ -472,11 +472,52 @@
               </div>
             </div>
 
+            <style id="retur-search-layout-fix">
+/* Retur/Tukar: samakan proporsi pencarian dengan kasir pada layar HP */
+#sec-returPos .retur-search-wrapper,
+#sec-returBarang .retur-search-wrapper,
+.retur-search-wrapper {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.retur-search-wrapper .retur-branch-select {
+  flex:0 1 34%;
+  width:34%;
+  min-width:0;
+  max-width:180px;
+  margin-right:0 !important;
+  padding-left:8px;
+  padding-right:6px;
+  font-size:14px;
+}
+.retur-search-wrapper .retur-search-input {
+  flex:1 1 0;
+  width:0;
+  min-width:0;
+  margin:0;
+  padding-left:10px;
+  padding-right:8px;
+  font-size:14px;
+}
+.retur-search-wrapper .retur-scan-button {
+  flex:0 0 54px;
+  width:54px;
+  min-width:54px;
+  padding-left:0;
+  padding-right:0;
+}
+@media (max-width:480px) {
+  .retur-search-wrapper .retur-branch-select { flex-basis:32%; width:32%; font-size:13px; }
+  .retur-search-wrapper .retur-scan-button { flex-basis:48px; width:48px; min-width:48px; }
+}
+</style>
+
             <!-- Bagian Search & Scanner Retur -->
-            <div class="pos-search-wrapper" style="background: #fff8f8;">
-              <select id="returPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="initReturPos()"></select>
-              <input type="text" id="searchReturPos" class="form-control pos-search-input" style="border-color: #dc3545 !important;" placeholder="Cari nama atau kode barang retur..." oninput="handleReturPosInput()" autocomplete="off">
-              <button class="btn-scan-mobile" style="border-color: #dc3545; color: #dc3545;" onclick="toggleReturPosScanner()">
+            <div class="pos-search-wrapper retur-search-wrapper" style="background: #fff8f8;">
+              <select id="returPilihCabang" class="form-control retur-branch-select" style="display:none;" onchange="initReturPos()"></select>
+              <input type="text" id="searchReturPos" class="form-control pos-search-input retur-search-input" style="border-color: #dc3545 !important;" placeholder="Cari nama atau kode" oninput="handleReturPosInput()" autocomplete="off">
+              <button class="btn-scan-mobile retur-scan-button" style="border-color: #dc3545; color: #dc3545;" onclick="toggleReturPosScanner()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3M9 9h6v6H9z"/></svg>
               </button>
             </div>
