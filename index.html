@@ -3289,7 +3289,9 @@ function simpanEditItemModal() {
         if (!nota || seen.has(nota)) return;
         var localBranch = String(r.id_cabang || '').trim();
         var requestedBranch = String(branchId || '').trim();
-        if (requestedBranch && localBranch && localBranch !== requestedBranch) return;
+        // Untuk pengguna cabang, jangan tampilkan catatan lokal tanpa identitas cabang
+        // karena berisiko mencampur transaksi antar-cabang.
+        if (requestedBranch && localBranch !== requestedBranch) return;
         mergedRows.push(r);
         seen.add(nota);
       });
@@ -3304,8 +3306,11 @@ function simpanEditItemModal() {
     initIndexedDB(async function(ok) {
       if (!ok) { globalRiwayatData = []; filterRiwayatTransaksi(); return; }
       try {
+        var requestedBranch = String(branchId || '').trim();
         globalRiwayatData = (await getAllFromStore('riwayatPenjualan')).filter(function(r) {
-          return String(r.sync_status || '').toUpperCase() === 'PENDING';
+          if (String(r.sync_status || '').toUpperCase() !== 'PENDING') return false;
+          var localBranch = String(r.id_cabang || '').trim();
+          return !requestedBranch || localBranch === requestedBranch;
         });
       } catch(e) { globalRiwayatData = []; }
       filterRiwayatTransaksi();
