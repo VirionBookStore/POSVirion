@@ -2242,7 +2242,14 @@ function renderDashboardUI(data, startStr, endStr) {
     function renderTabelBarang(data) {
       var tbody = document.querySelector("#tabelBarang tbody");
       if (!tbody) return;
-      masterBarangViewData = Array.isArray(data) ? data : [];
+      // Urutan Master Barang harus sama saat pertama tampil dari cache maupun
+      // setelah respons server masuk. Sortir salinan untuk tampilan saja;
+      // urutan data sumber dan data transaksi tidak diubah.
+      masterBarangViewData = (Array.isArray(data) ? data.slice() : []).sort(function(a, b) {
+        var idA = String((a && a.id_barang) || '').trim();
+        var idB = String((b && b.id_barang) || '').trim();
+        return idA.localeCompare(idB, 'id', { numeric: true, sensitivity: 'base' });
+      });
       masterBarangCurrentPage = 1;
       renderHalamanMasterBarang();
     }
