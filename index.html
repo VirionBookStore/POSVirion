@@ -3958,8 +3958,10 @@ function simpanEditItemModal() {
 
     function loadLogoToko() {
       google.script.run.withSuccessHandler(function(url) {
-        document.getElementById("storeLogoImg").src = url;
-        document.getElementById("loginLogoImg").src = url;
+        // Gunakan logo yang tersimpan di pengaturan toko; bila kosong, gunakan aset logo repository.
+        var logoSrc = (url && String(url).trim()) ? url : './icon.png';
+        document.getElementById("storeLogoImg").src = logoSrc;
+        document.getElementById("loginLogoImg").src = logoSrc;
       }).getLogoToko();
     }
 
