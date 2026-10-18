@@ -5419,35 +5419,51 @@ function prosesCheckoutReturFinal() {
       });
     }
 
-    function updateLocalStockAfterTransaction(items) {
-      return getAllFromStore('masterBarang').then(function(rows) {
-        const qtyMap = {};
-        (items || []).forEach(function(item) {
-          const id = String(item.id_barang || '').trim();
-          const qty = Number(item.qty) || 0;
-          if (id && qty > 0) qtyMap[id] = (qtyMap[id] || 0) + qty;
-        });
+    function updateLocalStockAfterTransaction(items, transactionBranchId) {
+      const branchId = String(transactionBranchId || '').trim();
+      const cachedBranchId = String(localStorage.getItem('aspos_master_branch') || '').trim();
+      const selectedBranch = document.getElementById('posPilihCabang');
+      const visibleBranchId = (isOwner() && selectedBranch && selectedBranch.value)
+        ? String(selectedBranch.value).trim()
+        : String((currentUser && currentUser.id_cabang) || '').trim();
+      const qtyMap = {};
+      (items || []).forEach(function(item) {
+        const id = String(item.id_barang || '').trim();
+        const qty = Number(item.qty) || 0;
+        if (id && qty > 0) qtyMap[id] = (qtyMap[id] || 0) + qty;
+      });
 
-        // Stok di cache dan katalog yang sedang tampil harus berubah bersamaan.
-        // Jangan biarkan objek globalDataBarang tetap menyimpan stok sebelum transaksi.
-        rows.forEach(function(row) {
+      // MasterBarang hanya menyimpan satu cache cabang. Jangan pernah mengurangi
+      // cache cabang A untuk transaksi Owner yang sedang memilih cabang B.
+      const updateVisibleCatalog = branchId && branchId === visibleBranchId;
+      const updateStoredCache = branchId && branchId === cachedBranchId;
+      const updateRows = function(rows) {
+        (rows || []).forEach(function(row) {
           const id = String(row.id_barang || '').trim();
-          if (qtyMap[id] !== undefined) {
+          if (Object.prototype.hasOwnProperty.call(qtyMap, id)) {
             row.stok = Math.max(0, (Number(row.stok) || 0) - qtyMap[id]);
           }
         });
+      };
 
-        return replaceStore('masterBarang', rows).then(function(result) {
-          const currentRows = Array.isArray(globalDataBarang) ? globalDataBarang : [];
-          currentRows.forEach(function(row) {
-            const id = String(row.id_barang || '').trim();
-            if (qtyMap[id] !== undefined) {
-              row.stok = Math.max(0, (Number(row.stok) || 0) - qtyMap[id]);
-            }
-          });
+      const updateVisible = function() {
+        if (updateVisibleCatalog && Array.isArray(globalDataBarang)) {
+          updateRows(globalDataBarang);
           if (typeof renderPosProductList === 'function') renderPosProductList();
-          return result;
-        });
+        }
+      };
+
+      if (!updateStoredCache) {
+        updateVisible();
+        return Promise.resolve({ skippedCacheUpdate: true, transactionBranchId: branchId, cachedBranchId: cachedBranchId });
+      }
+
+      return getAllFromStore('masterBarang').then(function(rows) {
+        updateRows(rows);
+        return replaceStore('masterBarang', rows);
+      }).then(function(result) {
+        updateVisible();
+        return result;
       });
     }
 
@@ -5493,7 +5509,7 @@ function prosesCheckoutReturFinal() {
       await putStore('riwayatPenjualan', localHistory);
 
       // Kurangi stok lokal segera. Google Sheets baru diperbarui saat berhasil upload.
-      await updateLocalStockAfterTransaction(payload.items || []);
+      await updateLocalStockAfterTransaction(payload.items || [], payload.id_cabang);
 
       if (displayData) {
         displayData.no_nota = localNoNota;
