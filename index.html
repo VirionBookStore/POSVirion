@@ -3852,10 +3852,10 @@ function simpanEditItemModal() {
         return String(value == null ? '' : value)
           .toLocaleLowerCase('id-ID')
           .normalize('NFD')
-          .replace(/[\\u0300-\\u036f]/g, '')
-          .replace(/[^\\p{L}\\p{N}]+/gu, ' ')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
           .trim()
-          .replace(/\\s+/g, ' ');
+          .replace(/\s+/g, ' ');
       }
 
       var kataCari = normalisasiCari(keyword).split(' ').filter(Boolean);
@@ -5150,7 +5150,7 @@ function prosesCheckoutReturFinal() {
           // Scan langsung menambahkan barang ke keranjang, lalu tampilkan judulnya
           // di daftar beserta badge jumlah (misalnya 1) agar kasir bisa memverifikasi.
           const normalizeCode = function(v) {
-            return String(v == null ? '' : v).trim().toLowerCase().replace(/\\s+/g, '');
+            return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, '');
           };
           const scannedCode = normalizeCode(scanned);
           const sourceBarang = (typeof globalDataBarang !== 'undefined' && Array.isArray(globalDataBarang))
