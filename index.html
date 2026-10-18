@@ -5025,11 +5025,35 @@ function prosesCheckoutReturFinal() {
       window.togglePosScanner = function() {
         startScannerInstance('readerPos', 'html5QrCodePos', function(value) {
           const el = document.getElementById('searchPosMobile');
+          const scanned = String(value || '').trim();
           if (el) {
-            el.value = value;
+            el.value = scanned;
             el.dispatchEvent(new Event('input', { bubbles: true }));
           }
-          if (typeof handlePosSearchMobile === 'function') handlePosSearchMobile();
+
+          // Barcode yang cocok langsung masuk keranjang tanpa perlu mengetuk
+          // kartu barang. Scan barang yang sama lagi akan menambah jumlahnya.
+          const normalizeCode = function(v) {
+            return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, '');
+          };
+          const scannedCode = normalizeCode(scanned);
+          const sourceBarang = (typeof globalDataBarang !== 'undefined' && Array.isArray(globalDataBarang))
+            ? globalDataBarang : [];
+          const item = sourceBarang.find(function(b) {
+            if (!b || b.status === 'Tidak Aktif') return false;
+            return normalizeCode(b.id_barang) === scannedCode ||
+              normalizeCode(b.barcode) === scannedCode ||
+              normalizeCode(b.kode_barcode) === scannedCode;
+          });
+
+          if (item && typeof tambahKeKeranjang === 'function') {
+            tambahKeKeranjang(item);
+            if (el) el.value = '';
+            if (typeof renderPosProductList === 'function') renderPosProductList();
+          } else if (typeof handlePosSearchMobile === 'function') {
+            // Barcode belum terdaftar? Tetap tampilkan hasil pencarian manual.
+            handlePosSearchMobile();
+          }
         });
       };
 
