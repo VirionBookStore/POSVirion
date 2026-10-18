@@ -6305,7 +6305,13 @@ function prosesCheckoutReturFinal() {
     }
 
     function asposRenderSupplierLocal(data) {
-      globalDataSupplier = Array.isArray(data) ? data : [];
+      // Urutkan dengan kunci yang stabil agar tampilan cache lokal dan server sama.
+      // Penyortiran hanya untuk tampilan; data di Google Sheets tidak diubah.
+      globalDataSupplier = (Array.isArray(data) ? data.slice() : []).sort(function(a, b) {
+        var idA = String((a && a.id_supplier) || '').trim();
+        var idB = String((b && b.id_supplier) || '').trim();
+        return idA.localeCompare(idB, 'id', { numeric: true, sensitivity: 'base' });
+      });
       var tbody = document.querySelector('#tabelSupplier tbody');
       if (tbody) {
         tbody.innerHTML = '';
