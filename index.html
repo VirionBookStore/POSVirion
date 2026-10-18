@@ -2583,7 +2583,9 @@ function tutupModalKeranjang() {
 // --- 1. RENDER LIST PRODUK KASIR (Ada Gambar & Badge Qty) ---
 function renderPosProductList() {
   let listWrapper = document.getElementById("posProductList");
-  let keyword = document.getElementById("searchPosMobile").value.toLowerCase();
+  let searchInput = document.getElementById("searchPosMobile");
+  if (!listWrapper) return;
+  let keyword = searchInput ? String(searchInput.value || '').toLowerCase() : '';
   listWrapper.innerHTML = "";
   
   let activeBarang = globalDataBarang.filter(item => item.status !== "Tidak Aktif");
@@ -2611,7 +2613,7 @@ function renderPosProductList() {
     div.onclick = function() { tambahKeKeranjang(item); };
     
     // Cek keranjang untuk menampilkan Lencana (Badge) Qty jika sudah dipilih
-    let cartItem = keranjang.find(k => k.id_barang === item.id_barang);
+    let cartItem = keranjang.find(k => String(k.id_barang || '').trim() === String(item.id_barang || '').trim());
     let qtyBadge = cartItem ? `<div class="pos-item-qty-badge">${cartItem.qty}</div>` : '';
     
     // Ambil gambar produk asli dari database
@@ -2646,7 +2648,7 @@ function handlePosSearchMobile() {
         alert("Stok barang habis!");
         return;
       }
-      var exist = keranjang.find(k => k.id_barang === item.id_barang);
+      var exist = keranjang.find(k => String(k.id_barang || '').trim() === String(item.id_barang || '').trim());
       if (exist) {
         if (exist.qty >= Number(item.stok)) {
           alert("Jumlah melebihi stok tersedia (" + item.stok + ")");
@@ -2673,7 +2675,7 @@ function handlePosSearchMobile() {
       keranjang.forEach(item => item.promoPotongan = 0);
       let groups = {};
       keranjang.forEach(item => {
-        let promo = globalPromoData.find(p => p.id_barang === item.id_barang && p.status === 'Aktif');
+        let promo = globalPromoData.find(p => String(p.id_barang || '').trim() === String(item.id_barang || '').trim() && p.status === 'Aktif');
         if (promo) {
           let key = promo.tipe_promo + "_" + promo.min_qty + "_" + promo.besaran_promo + "_" + promo.harga_bundling;
           if (!groups[key]) groups[key] = { promo: promo, items: [], totalQty: 0, totalBruto: 0 };
@@ -2747,7 +2749,7 @@ function handlePosSearchMobile() {
     function ubahQtyItem(idx, val) {
       let q = parseInt(val) || 1;
       let item = keranjang[idx];
-      let barangMaster = globalDataBarang.find(b => b.id_barang === item.id_barang);
+      let barangMaster = globalDataBarang.find(b => String(b.id_barang || '').trim() === String(item.id_barang || '').trim());
       let stokMax = barangMaster ? Number(barangMaster.stok) : 9999;
       if (q > stokMax) {
         alert("Jumlah melebihi stok tersedia (" + stokMax + ")");
@@ -2786,7 +2788,7 @@ function handlePosSearchMobile() {
     totalBarangCounter += Number(k.qty); 
 
     // Ambil gambar produk dari Master Data
-    let itemMaster = globalDataBarang.find(b => b.id_barang === k.id_barang);
+    let itemMaster = globalDataBarang.find(b => String(b.id_barang || '').trim() === String(k.id_barang || '').trim());
     let imgUrl = itemMaster && itemMaster.gambar ? itemMaster.gambar : 'https://via.placeholder.com/55?text=Img';
 
     if(cartList) {
@@ -2862,7 +2864,7 @@ function toggleEditDiskon() {
 
 function bukaModalEditItemCart(idx) {
    let item = keranjang[idx];
-   let itemMaster = globalDataBarang.find(b => b.id_barang === item.id_barang);
+   let itemMaster = globalDataBarang.find(b => String(b.id_barang || '').trim() === String(item.id_barang || '').trim());
    
    document.getElementById("editItemIndex").value = idx;
    document.getElementById("editItemNama").innerText = item.nama_barang;
