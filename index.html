@@ -4812,13 +4812,23 @@ function renderReturProductList() {
   let searchEl = document.getElementById("searchReturPos");
   if(!listWrapper || !searchEl) return;
   
-  let keyword = searchEl.value.toLowerCase();
+  // Samakan perilaku pencarian dengan kasir: kata boleh ditemukan di posisi
+  // mana pun dan urutannya tidak harus sama dengan nama barang.
+  const normalizeSearch = function(value) {
+    return String(value == null ? '' : value).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  };
+  const keyword = normalizeSearch(searchEl.value).trim();
+  const queryParts = keyword.split(/\\s+/).filter(Boolean);
   listWrapper.innerHTML = "";
-  
-  let activeBarang = globalDataBarang.filter(item => item.status !== "Tidak Aktif");
+
+  let activeBarang = globalDataBarang.filter(item => item && item.status !== "Tidak Aktif");
   let filtered = activeBarang.filter(item => {
-    let matchSup = (currentReturSupplier === "Semua") || (String(item.supplier || "").toLowerCase() === currentReturSupplier);
-    let matchSearch = String(item.nama_barang || "").toLowerCase().includes(keyword) || String(item.id_barang || "").toLowerCase().includes(keyword);
+    let matchSup = (currentReturSupplier === "Semua") || (String(item.supplier || "").trim().toLowerCase() === currentReturSupplier);
+    const title = normalizeSearch(item.nama_barang);
+    const code = normalizeSearch(item.id_barang);
+    const matchSearch = !queryParts.length || queryParts.every(function(part) {
+      return title.includes(part) || code.includes(part);
+    });
     return matchSup && matchSearch;
   });
 
