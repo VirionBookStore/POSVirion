@@ -6332,13 +6332,39 @@ function prosesCheckoutReturFinal() {
     }
 
     async function asposLoadSupplierLocalFirst() {
+      var tbody = document.querySelector('#tabelSupplier tbody');
       try {
-        var result = await asposGetLocalOrServer('supplier', 'getSupplier', []);
-        asposRenderSupplierLocal(result.data);
+        var ready = await asposEnsureIndexedDB();
+        var local = [];
+        if (ready) {
+          try { local = await getAllFromStore('supplier'); } catch (e) {
+            console.warn('[AS-Pos] Gagal membaca cache Supplier:', e);
+          }
+        }
+        // Tampilkan cache lokal lebih dulu agar menu cepat dibuka.
+        if (local.length) asposRenderSupplierLocal(local);
+        else if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Memuat data supplier…</td></tr>';
+
+        // Segarkan dari GAS di latar belakang. Jika server gagal, cache lokal tidak dihapus.
+        try {
+          var serverData = await asposCallGasLocalFirst('getSupplier', []);
+          if (!Array.isArray(serverData)) {
+            if (serverData && Array.isArray(serverData.data)) serverData = serverData.data;
+            else if (serverData && Array.isArray(serverData.items)) serverData = serverData.items;
+            else throw new Error('Respons getSupplier bukan array data.');
+          }
+          if (ready) {
+            try { await replaceStore('supplier', serverData); }
+            catch (e) { console.warn('[AS-Pos] Gagal menyimpan Supplier ke IndexedDB:', e); }
+          }
+          asposRenderSupplierLocal(serverData);
+        } catch (serverErr) {
+          console.warn('[AS-Pos] Penyegaran Supplier dari server gagal; cache lokal tetap digunakan:', serverErr);
+          if (!local.length && tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#dc3545;">Supplier belum tersedia di lokal dan server tidak dapat dihubungi.</td></tr>';
+        }
       } catch (err) {
         console.error('[AS-Pos] Supplier:', err);
-        var tbody = document.querySelector('#tabelSupplier tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#dc3545;">Gagal memuat supplier. Periksa koneksi atau sinkronkan data.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#dc3545;">Gagal membuka data supplier. Periksa koneksi atau database lokal.</td></tr>';
       }
     }
     window.loadSupplier = asposLoadSupplierLocalFirst;
@@ -6503,26 +6529,55 @@ function prosesCheckoutReturFinal() {
     }
     window.loadRiwayat = asposLoadRiwayatLocalFirst;
 
+    function asposRenderCabangLocal(data) {
+      var rows = Array.isArray(data) ? data : [];
+      var tbody = document.getElementById('tabelCabangBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada data cabang terdaftar.</td></tr>';
+        return;
+      }
+      rows.forEach(function(c) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td><b>' + (c.id_cabang || '') + '</b></td><td>' + (c.nama_cabang || '') + '</td><td>' + (c.alamat || '') + '</td><td>' + (c.telepon || '') + '</td><td><b style="color:' + (c.status === 'Aktif' ? '#198754' : '#dc3545') + ';">' + (c.status || '') + '</b></td>';
+        tbody.appendChild(tr);
+      });
+    }
+
     async function asposLoadCabangLocalFirst() {
+      var tbody = document.getElementById('tabelCabangBody');
       try {
-        var result = await asposGetLocalOrServer('cabang', 'getCabang', []);
-        var data = result.data || [];
-        var tbody = document.getElementById('tabelCabangBody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-        if (!data.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Belum ada data cabang terdaftar.</td></tr>';
-          return;
+        var ready = await asposEnsureIndexedDB();
+        var local = [];
+        if (ready) {
+          try { local = await getAllFromStore('cabang'); } catch (e) {
+            console.warn('[AS-Pos] Gagal membaca cache Cabang:', e);
+          }
         }
-        data.forEach(function(c) {
-          var tr = document.createElement('tr');
-          tr.innerHTML = '<td><b>' + (c.id_cabang || '') + '</b></td><td>' + (c.nama_cabang || '') + '</td><td>' + (c.alamat || '') + '</td><td>' + (c.telepon || '') + '</td><td><b style="color:' + (c.status === 'Aktif' ? '#198754' : '#dc3545') + ';">' + (c.status || '') + '</b></td>';
-          tbody.appendChild(tr);
-        });
+        // Tampilkan data lokal terlebih dahulu, lalu segarkan daftar cabang dari GAS.
+        if (local.length) asposRenderCabangLocal(local);
+        else if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Memuat data cabang…</td></tr>';
+
+        try {
+          var serverData = await asposCallGasLocalFirst('getCabang', []);
+          if (!Array.isArray(serverData)) {
+            if (serverData && Array.isArray(serverData.data)) serverData = serverData.data;
+            else if (serverData && Array.isArray(serverData.items)) serverData = serverData.items;
+            else throw new Error('Respons getCabang bukan array data.');
+          }
+          if (ready) {
+            try { await replaceStore('cabang', serverData); }
+            catch (e) { console.warn('[AS-Pos] Gagal menyimpan Cabang ke IndexedDB:', e); }
+          }
+          asposRenderCabangLocal(serverData);
+        } catch (serverErr) {
+          console.warn('[AS-Pos] Penyegaran Cabang dari server gagal; cache lokal tetap digunakan:', serverErr);
+          if (!local.length && tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#dc3545;">Cabang belum tersedia di lokal dan server tidak dapat dihubungi.</td></tr>';
+        }
       } catch (err) {
         console.error('[AS-Pos] Cabang:', err);
-        var tbody = document.getElementById('tabelCabangBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#dc3545;">Gagal memuat cabang. Periksa koneksi atau sinkronkan data.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#dc3545;">Gagal membuka data cabang. Periksa koneksi atau database lokal.</td></tr>';
       }
     }
     window.loadCabang = asposLoadCabangLocalFirst;
