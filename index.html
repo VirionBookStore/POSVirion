@@ -265,6 +265,54 @@
       #tabelDashboardPenjualan th, #tabelDashboardPenjualan td { padding:8px 9px; font-size:11px; }
       .dashboard-secondary-stats { grid-template-columns:1fr 1fr; gap:9px; }
     }
+
+  /* Tata letak ringkas khusus HP/APK. Desktop tidak diubah. */
+  @media screen and (max-width: 600px) {
+    /* Dashboard: empat ringkasan dalam satu baris */
+    .dashboard-summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; }
+    .dashboard-summary-card { min-width: 0; min-height: 0; padding: 8px 4px; gap: 0; justify-content: center; text-align: center; }
+    .dashboard-summary-card .summary-icon { display: none; }
+    .dashboard-summary-card > div { min-width: 0; width: 100%; }
+    .summary-label { font-size: 9px !important; line-height: 1.15; margin-bottom: 4px; overflow-wrap: anywhere; }
+    .summary-value { font-size: clamp(10px, 3vw, 13px) !important; line-height: 1.2; overflow-wrap: anywhere; }
+    .dashboard-secondary-stats { gap: 6px; }
+    .dashboard-mini-card { padding: 9px 10px; }
+
+    /* Riwayat: pencarian dan cabang satu baris */
+    #sec-riwayatPenjualan .card-header { padding: 12px; gap: 9px !important; }
+    #sec-riwayatPenjualan .card-header > div:first-child { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(105px, .8fr); align-items: end !important; gap: 7px !important; }
+    #sec-riwayatPenjualan .card-header > div:first-child > span { grid-column: 1 / -1; }
+    #sec-riwayatPenjualan #searchRiwayatInput { width: 100% !important; min-width: 0; }
+    #sec-riwayatPenjualan .history-branch-filter { min-width: 0; }
+    #sec-riwayatPenjualan .history-branch-filter label,
+    #sec-riwayatPenjualan .history-date-filters label { font-size: 10px !important; }
+    #sec-riwayatPenjualan .history-branch-filter .form-control { width: 100%; min-width: 0 !important; }
+    #sec-riwayatPenjualan .card-header > div:nth-child(2) { display: grid !important; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items: end !important; gap: 6px !important; }
+    #sec-riwayatPenjualan .history-date-filters { min-width: 0; }
+    #sec-riwayatPenjualan .history-date-filters .form-control { width: 100%; min-width: 0 !important; padding: 7px 4px; }
+    #sec-riwayatPenjualan .card-header > div:nth-child(2) > div { min-width: 0; }
+    #sec-riwayatPenjualan .card-header > div:nth-child(2) .btn { padding: 7px 8px; white-space: nowrap; }
+    #ringkasanRiwayatPenjualan { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 5px !important; padding: 9px !important; }
+    #ringkasanRiwayatPenjualan > div { min-width: 0; padding: 8px 6px !important; }
+    #ringkasanRiwayatPenjualan > div > div:first-child { font-size: 10px !important; line-height: 1.2; }
+    #ringkasanRiwayatPenjualan > div > div:last-child { font-size: clamp(11px, 3.2vw, 15px) !important; overflow-wrap: anywhere; }
+
+    /* Laporan penjualan: cabang + Export + Share satu baris */
+    #sec-riwayatPerBarang .card-header { align-items: flex-start; gap: 8px; padding: 12px; }
+    #sec-riwayatPerBarang .report-export-toolbar { display: grid !important; grid-template-columns: minmax(0,1fr) auto auto; align-items: end !important; gap: 5px !important; width: 100%; }
+    #sec-riwayatPerBarang #wrapperDropdownCabangBarang { min-width: 0; }
+    #sec-riwayatPerBarang #wrapperDropdownCabangBarang label { display: block; font-size: 10px !important; }
+    #sec-riwayatPerBarang #filterBarangCabang { width: 100% !important; min-width: 0; padding: 7px 4px; }
+    #sec-riwayatPerBarang .report-export-toolbar .btn { padding: 7px 6px; white-space: nowrap; font-size: 11px !important; }
+    #sec-riwayatPerBarang .card-body { padding: 12px; }
+    #sec-riwayatPerBarang .card-body > div:first-child { display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px !important; margin-bottom: 12px !important; align-items: end !important; }
+    #sec-riwayatPerBarang .card-body > div:first-child > div { min-width: 0; }
+    #sec-riwayatPerBarang .card-body > div:first-child label { display: block; font-size: 10px !important; line-height: 1.2; min-height: 24px; }
+    #sec-riwayatPerBarang .card-body > div:first-child .form-control { width: 100% !important; min-width: 0; padding: 7px 4px; }
+    #sec-riwayatPerBarang .card-body > div:first-child > div:last-child { grid-column: 1 / -1; }
+    #sec-riwayatPerBarang .card-body > div:first-child > div:last-child .btn { width: 100%; justify-content: center; }
+  }
+
   </style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
 </head>
@@ -808,12 +856,12 @@
                 <input type="text" id="searchRiwayatInput" class="search-box" placeholder="Cari Nota, Kasir..." oninput="filterRiwayatTransaksi()" style="width:min(260px, 100%); padding:7px 10px; font-size:12px;">
               </div>
               <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
-                <div>
+                <div class="history-branch-filter">
                   <label style="display:block; font-size:12px; margin-bottom:4px;">Cabang</label>
                   <select id="filterRiwayatCabang" class="form-control" onchange="filterRiwayatTransaksi()" style="display:none; min-width:145px;"></select>
                 </div>
-                <div><label for="filterRiwayatStart" style="display:block; font-size:12px; margin-bottom:4px;">Dari Tanggal</label><input type="date" id="filterRiwayatStart" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
-                <div><label for="filterRiwayatEnd" style="display:block; font-size:12px; margin-bottom:4px;">Sampai Tanggal</label><input type="date" id="filterRiwayatEnd" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
+                <div class="history-date-filters"><label for="filterRiwayatStart" style="display:block; font-size:12px; margin-bottom:4px;">Dari Tanggal</label><input type="date" id="filterRiwayatStart" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
+                <div class="history-date-filters"><label for="filterRiwayatEnd" style="display:block; font-size:12px; margin-bottom:4px;">Sampai Tanggal</label><input type="date" id="filterRiwayatEnd" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
                 <button type="button" class="btn btn-outline btn-sm" onclick="resetFilterRiwayat()">Reset Filter</button>
               </div>
             </div>
@@ -856,7 +904,8 @@
           <div class="card">
             <div class="card-header">
               <span>Laporan Penjualan</span>
-              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <div class="report-export-toolbar" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                
                 <button class="btn btn-outline btn-sm" onclick="exportPenjualanPerBarangExcel(false)">📊 Export Excel</button>
                 <button class="btn btn-primary btn-sm" onclick="exportPenjualanPerBarangExcel(true)">📤 Share Excel</button>
               </div>
