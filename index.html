@@ -4984,16 +4984,36 @@ function tutupModalKeranjangRetur() {
 
 function toggleReturPosScanner() {
   var readerDiv = document.getElementById("readerReturPos");
+  if (!readerDiv) return;
   if (!isReturPosScanning) {
     readerDiv.style.display = "block";
     html5QrCodeReturPos = new Html5Qrcode("readerReturPos");
-    html5QrCodeReturPos.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 100 } },
-      function(decodedText) { 
-        document.getElementById("searchReturPos").value = decodedText; 
-        renderReturProductList(); 
-        stopReturPosScanner(); 
+    html5QrCodeReturPos.start({ facingMode: "environment" }, { fps: 12, qrbox: { width: 250, height: 100 } },
+      function(decodedText) {
+        var scanned = String(decodedText || '').trim();
+        if (!scanned) return;
+        // Hentikan pembacaan ganda sebelum memasukkan hasil scan ke keranjang.
+        stopReturPosScanner();
+        var normalize = function(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\\s+/g, ''); };
+        var code = normalize(scanned);
+        var source = Array.isArray(globalDataBarang) ? globalDataBarang : [];
+        var item = source.find(function(b) {
+          return b && b.status !== 'Tidak Aktif' &&
+            (normalize(b.id_barang) === code || normalize(b.barcode) === code || normalize(b.kode_barcode) === code);
+        });
+        var search = document.getElementById("searchReturPos");
+        if (item) {
+          if (search) search.value = String(item.nama_barang || '');
+          // Sama seperti kasir: hasil scan langsung masuk keranjang, tanpa klik barang lagi.
+          tambahKeKeranjangRetur(item);
+          renderReturProductList();
+        } else {
+          if (search) search.value = scanned;
+          renderReturProductList();
+          alert('Barcode belum ditemukan. Hasil scan ditampilkan untuk pencarian manual.');
+        }
       }, function() {}
-    ).catch(err => { alert("Kamera error: " + err); readerDiv.style.display = "none"; });
+    ).catch(err => { alert("Kamera error: " + err); readerDiv.style.display = "none"; isReturPosScanning = false; });
     isReturPosScanning = true;
   } else {
     stopReturPosScanner();
@@ -5051,10 +5071,15 @@ function prosesCheckoutReturFinal() {
       if (!res || res.status !== 'success') {
         throw new Error((res && res.message) || 'Server tidak mengonfirmasi transaksi retur/tukar.');
       }
+      // Tutup alur transaksi segera setelah server mengonfirmasi sukses.
+      // Penyegaran katalog dijalankan di belakang agar tidak menahan UI.
       keranjangRetur = [];
       tutupModalKeranjangRetur();
-      initReturPos();
-      loadBarang(true);
+      renderKeranjangRetur();
+      setTimeout(function() {
+        try { initReturPos(); } catch(refreshErr) { console.warn('[AS-Pos] refresh katalog retur:', refreshErr); }
+        try { loadBarang(true); } catch(refreshErr) { console.warn('[AS-Pos] refresh master barang:', refreshErr); }
+      }, 0);
     })
     .catch(function(err) {
       console.error('[AS-Pos] retur/tukar', err);
