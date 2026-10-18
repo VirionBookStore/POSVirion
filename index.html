@@ -2485,19 +2485,15 @@ function renderPosProductList() {
   
   let activeBarang = globalDataBarang.filter(item => item.status !== "Tidak Aktif");
 
-  // Filter berdasarkan Supplier & Search
-  // Pencarian fleksibel: cocok dengan potongan nama/kode, atau awalan beberapa kata
-  // sehingga kata awal + kata akhir judul bisa dicari tanpa mengetik judul lengkap.
-  const queryParts = keyword.trim().split(/\\s+/).filter(Boolean);
+  // Pencarian fleksibel: setiap kata dapat berada di bagian mana pun pada judul,
+  // tidak harus berurutan atau berada di awal kata.
+  const queryParts = keyword.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
   let filtered = activeBarang.filter(item => {
     let matchSup = (currentPosSupplier === "Semua") || (String(item.supplier || "").toLowerCase() === currentPosSupplier);
-    const title = String(item.nama_barang || "").toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+    const title = String(item.nama_barang || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const code = String(item.id_barang || "").toLowerCase();
-    const words = title.split(/[^a-z0-9]+/).filter(Boolean);
-    const matchSearch = !keyword.trim() ||
-      title.includes(keyword.trim()) ||
-      code.includes(keyword.trim()) ||
-      queryParts.every(part => words.some(word => word.startsWith(part)));
+    const matchSearch = !queryParts.length ||
+      queryParts.every(part => title.includes(part) || code.includes(part));
     return matchSup && matchSearch;
   });
 
@@ -5032,27 +5028,9 @@ function prosesCheckoutReturFinal() {
             el.dispatchEvent(new Event('input', { bubbles: true }));
           }
 
-          // Barcode yang cocok langsung masuk keranjang tanpa perlu mengetuk
-          // kartu barang. Scan barang yang sama lagi akan menambah jumlahnya.
-          const normalizeCode = function(v) {
-            return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, '');
-          };
-          const scannedCode = normalizeCode(scanned);
-          const sourceBarang = (typeof globalDataBarang !== 'undefined' && Array.isArray(globalDataBarang))
-            ? globalDataBarang : [];
-          const item = sourceBarang.find(function(b) {
-            if (!b || b.status === 'Tidak Aktif') return false;
-            return normalizeCode(b.id_barang) === scannedCode ||
-              normalizeCode(b.barcode) === scannedCode ||
-              normalizeCode(b.kode_barcode) === scannedCode;
-          });
-
-          if (item && typeof tambahKeKeranjang === 'function') {
-            tambahKeKeranjang(item);
-            if (el) el.value = '';
-            if (typeof renderPosProductList === 'function') renderPosProductList();
-          } else if (typeof handlePosSearchMobile === 'function') {
-            // Barcode belum terdaftar? Tetap tampilkan hasil pencarian manual.
+          // Tampilkan barang hasil scan terlebih dahulu agar kasir bisa memeriksa judul.
+          // Barang baru masuk keranjang setelah kasir mengetuk baris hasil pencarian.
+          if (typeof handlePosSearchMobile === 'function') {
             handlePosSearchMobile();
           }
         });
