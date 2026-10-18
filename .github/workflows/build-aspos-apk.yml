@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'android-app/**'
+      - 'index.html'
       - '.github/workflows/build-aspos-apk.yml'
 
 permissions:
