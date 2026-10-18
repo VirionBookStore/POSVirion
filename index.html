@@ -4943,26 +4943,43 @@ function prosesCheckoutReturFinal() {
         readerDiv.innerHTML = '<div style="padding:12px;text-align:center;color:#6c757d;font-size:12px;">Meminta izin kamera...</div>';
 
         try {
-          // Minta izin kamera lebih dulu. Ini membantu browser/GitHub Pages
-          // menampilkan prompt permission dengan benar.
-          // Uji izin kamera hanya sementara. Stream harus ditutup kembali
-          // sebelum Html5Qrcode membuka kamera, jika tidak Android Chrome
-          // dapat mengembalikan "Could not start video source".
+          // Buka kamera langsung melalui Html5Qrcode. Hindari membuka getUserMedia
+          // lalu segera menutupnya, karena beberapa Android gagal membuka ulang kamera.
           if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('Browser tidak menyediakan akses kamera.');
           }
-          const permissionStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' } },
-            audio: false
-          });
-          permissionStream.getTracks().forEach(function(track) { track.stop(); });
-          const cameraId = await chooseCamera();
           readerDiv.innerHTML = '';
           scanner = new Html5Qrcode(readerId, { verbose: false });
           window[stateName] = scanner;
           window[scanningName] = true;
 
-          await scanner.start(
+          const onScanSuccess = function(decodedText) {
+            const value = String(decodedText || '').trim();
+            if (!value) return;
+            // Hentikan scanner lebih dahulu agar satu barcode tidak masuk berkali-kali.
+            const stopPromise = scanner.stop().catch(function() {});
+            Promise.resolve(stopPromise).finally(function() {
+              window[scanningName] = false;
+              readerDiv.style.display = 'none';
+              readerDiv.innerHTML = '';
+              onDecoded(value);
+            });
+          };
+
+          try {
+            // Pilih kamera belakang secara langsung; Html5Qrcode yang membuka stream.
+            await scanner.start(
+              { facingMode: 'environment' },
+              scanConfig,
+              onScanSuccess,
+              function() {}
+            );
+          } catch (firstCameraError) {
+            // Fallback untuk perangkat yang tidak mendukung facingMode.
+            const cameraId = await chooseCamera();
+            await scanner.start(cameraId, scanConfig, onScanSuccess, function() {});
+          }
+
             cameraId,
             scanConfig,
             function(decodedText) {
