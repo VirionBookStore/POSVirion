@@ -636,6 +636,14 @@
                 <tbody></tbody>
               </table>
             </div>
+            <div id="masterBarangPager" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 4px;font-size:13px;">
+              <span id="masterBarangPageInfo">Menyiapkan daftar barang…</span>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <button type="button" class="btn btn-outline btn-sm" id="masterBarangPrev" onclick="ubahHalamanMasterBarang(-1)">‹ Sebelumnya</button>
+                <span id="masterBarangPageNumber">1 / 1</span>
+                <button type="button" class="btn btn-outline btn-sm" id="masterBarangNext" onclick="ubahHalamanMasterBarang(1)">Berikutnya ›</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2208,36 +2216,72 @@ function renderDashboardUI(data, startStr, endStr) {
 // Engine IndexedDB utama didefinisikan di bawah agar tidak terjadi benturan
 // deklarasi global dengan engine IndexedDB v1.0.
 
+    // Paginasi Master Barang agar puluhan/ratusan ribu baris tidak dibuat
+    // sekaligus sebagai elemen DOM. Data lengkap tetap tersimpan di globalDataBarang.
+    var masterBarangViewData = [];
+    var masterBarangCurrentPage = 1;
+    var masterBarangPageSize = 200;
+
+    function ubahHalamanMasterBarang(delta) {
+      var totalPages = Math.max(1, Math.ceil(masterBarangViewData.length / masterBarangPageSize));
+      masterBarangCurrentPage = Math.min(totalPages, Math.max(1, masterBarangCurrentPage + Number(delta || 0)));
+      renderHalamanMasterBarang();
+    }
+    window.ubahHalamanMasterBarang = ubahHalamanMasterBarang;
+
     function renderTabelBarang(data) {
       var tbody = document.querySelector("#tabelBarang tbody");
-      tbody.innerHTML = "";
-      if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: #6c757d;">Belum ada data barang.</td></tr>`;
-        return;
-      }
-      data.forEach(function(item) {
-        var tr = document.createElement("tr");
-        var imgTag = item.gambar ? `<img src="${item.gambar}" class="img-thumb" onerror="this.onerror=null;this.src='https://via.placeholder.com/36?text=No+Img';">` : `<div class="img-thumb">No Img</div>`;
-        var safeId = String(item.id_barang ?? '')
-        var isTidakAktif = item.status === 'Tidak Aktif';
-        var statusBadge = isTidakAktif ? '<span style="color:#dc3545;font-weight:bold;">Tidak Aktif</span>' : '<span style="color:#198754;font-weight:bold;">Aktif</span>';
+      if (!tbody) return;
+      masterBarangViewData = Array.isArray(data) ? data : [];
+      masterBarangCurrentPage = 1;
+      renderHalamanMasterBarang();
+    }
 
-        tr.innerHTML = `
-          <td><input type="checkbox"></td>
-          <td>${imgTag}</td>
-          <td style="white-space: nowrap;"><b>${item.id_barang}</b></td>
-          <td style="max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.supplier}">${item.supplier}</td>
-          <td style="min-width: 150px;">${item.nama_barang}</td>
-          <td style="max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.kategori || '-'}">${item.kategori || '-'}</td>
-          <td style="white-space: nowrap;">Rp ${Number(item.harga_jual).toLocaleString('id-ID')}</td>
-          <td style="white-space: nowrap;">Rp ${Number(item.harga_beli).toLocaleString('id-ID')}</td>
-          <td><b>${item.stok}</b></td>
-          <td style="white-space: nowrap;">${item.lokasi_rak || '-'}</td>
-          <td style="text-align: center;"><button class="badge-ubah" onclick="bukaModalEdit('${safeId}')">Ubah</button></td>
-          <td style="max-width: 90px;">${statusBadge}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+    function renderHalamanMasterBarang() {
+      var tbody = document.querySelector("#tabelBarang tbody");
+      if (!tbody) return;
+      var total = masterBarangViewData.length;
+      var totalPages = Math.max(1, Math.ceil(total / masterBarangPageSize));
+      masterBarangCurrentPage = Math.min(totalPages, Math.max(1, masterBarangCurrentPage));
+      var start = (masterBarangCurrentPage - 1) * masterBarangPageSize;
+      var pageData = masterBarangViewData.slice(start, start + masterBarangPageSize);
+      tbody.innerHTML = "";
+
+      if (!total) {
+        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:#6c757d;">Belum ada data barang yang cocok.</td></tr>';
+      } else {
+        var fragment = document.createDocumentFragment();
+        pageData.forEach(function(item) {
+          var tr = document.createElement("tr");
+          var imgTag = item.gambar ? '<img src="' + item.gambar + '" class="img-thumb" loading="lazy" onerror="this.onerror=null;this.src=\'https://via.placeholder.com/36?text=No+Img\';">' : '<div class="img-thumb">No Img</div>';
+          var safeId = String(item.id_barang ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          var isTidakAktif = item.status === 'Tidak Aktif';
+          var statusBadge = isTidakAktif ? '<span style="color:#dc3545;font-weight:bold;">Tidak Aktif</span>' : '<span style="color:#198754;font-weight:bold;">Aktif</span>';
+          tr.innerHTML = '<td><input type="checkbox"></td>' +
+            '<td>' + imgTag + '</td>' +
+            '<td style="white-space:nowrap;"><b>' + (item.id_barang || '') + '</b></td>' +
+            '<td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.supplier || '') + '">' + (item.supplier || '') + '</td>' +
+            '<td style="min-width:150px;">' + (item.nama_barang || '') + '</td>' +
+            '<td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (item.kategori || '-') + '">' + (item.kategori || '-') + '</td>' +
+            '<td style="white-space:nowrap;">Rp ' + Number(item.harga_jual || 0).toLocaleString('id-ID') + '</td>' +
+            '<td style="white-space:nowrap;">Rp ' + Number(item.harga_beli || 0).toLocaleString('id-ID') + '</td>' +
+            '<td><b>' + (item.stok ?? 0) + '</b></td>' +
+            '<td style="white-space:nowrap;">' + (item.lokasi_rak || '-') + '</td>' +
+            '<td style="text-align:center;"><button class="badge-ubah" onclick="bukaModalEdit(\'' + safeId + '\')">Ubah</button></td>' +
+            '<td style="max-width:90px;">' + statusBadge + '</td>';
+          fragment.appendChild(tr);
+        });
+        tbody.appendChild(fragment);
+      }
+
+      var info = document.getElementById('masterBarangPageInfo');
+      var number = document.getElementById('masterBarangPageNumber');
+      var prev = document.getElementById('masterBarangPrev');
+      var next = document.getElementById('masterBarangNext');
+      if (info) info.textContent = total ? 'Menampilkan ' + (start + 1).toLocaleString('id-ID') + '–' + Math.min(start + pageData.length, total).toLocaleString('id-ID') + ' dari ' + total.toLocaleString('id-ID') + ' barang' : 'Tidak ada data';
+      if (number) number.textContent = masterBarangCurrentPage.toLocaleString('id-ID') + ' / ' + totalPages.toLocaleString('id-ID');
+      if (prev) prev.disabled = masterBarangCurrentPage <= 1;
+      if (next) next.disabled = masterBarangCurrentPage >= totalPages;
     }
 
     function loadSupplier() {
