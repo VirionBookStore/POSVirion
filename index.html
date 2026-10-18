@@ -4851,30 +4851,44 @@ function renderReturSuppliers() {
 function renderReturProductList() {
   let listWrapper = document.getElementById("returProductList");
   let searchEl = document.getElementById("searchReturPos");
-  if(!listWrapper || !searchEl) return;
-  
-  // Samakan perilaku pencarian dengan kasir: kata boleh ditemukan di posisi
-  // mana pun dan urutannya tidak harus sama dengan nama barang.
+  if (!listWrapper || !searchEl) return;
+
+  // Normalize case, accents and repeated spaces before matching.
   const normalizeSearch = function(value) {
-    return String(value == null ? '' : value).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+    return String(value == null ? '' : value).toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
   };
-  const keyword = normalizeSearch(searchEl.value).trim();
-  const queryParts = keyword.split(/\\s+/).filter(Boolean);
+  const keyword = normalizeSearch(searchEl.value);
+  const queryParts = keyword ? keyword.split(' ').filter(Boolean) : [];
   listWrapper.innerHTML = "";
 
-  let activeBarang = globalDataBarang.filter(item => item && item.status !== "Tidak Aktif");
-  let filtered = activeBarang.filter(item => {
-    let matchSup = (currentReturSupplier === "Semua") || (String(item.supplier || "").trim().toLowerCase() === currentReturSupplier);
+  const activeBarang = (Array.isArray(globalDataBarang) ? globalDataBarang : [])
+    .filter(item => item && normalizeSearch(item.status) !== "tidak aktif");
+
+  // Each query word may appear anywhere in the title or item code; rank best matches first.
+  const filtered = activeBarang.map(function(item) {
     const title = normalizeSearch(item.nama_barang);
     const code = normalizeSearch(item.id_barang);
-    const matchSearch = !queryParts.length || queryParts.every(function(part) {
-      return title.includes(part) || code.includes(part);
-    });
-    return matchSup && matchSearch;
-  });
+    const supplier = normalizeSearch(item.supplier);
+    const matchSupplier = currentReturSupplier === "Semua" || supplier === normalizeSearch(currentReturSupplier);
+    let matchedParts = 0;
+    queryParts.forEach(function(part) { if (title.includes(part) || code.includes(part)) matchedParts++; });
+    const allPartsMatch = matchedParts === queryParts.length;
+    let score = 0;
+    if (keyword) {
+      if (title === keyword) score += 1000;
+      if (title.startsWith(keyword)) score += 500;
+      if (title.includes(keyword)) score += 300;
+      score += matchedParts * 50;
+      if (code === keyword) score += 200; else if (code.includes(keyword)) score += 100;
+    }
+    return { item: item, matchSupplier: matchSupplier, allPartsMatch: allPartsMatch, score: score };
+  }).filter(function(entry) { return entry.matchSupplier && (!queryParts.length || entry.allPartsMatch); })
+    .sort(function(a, b) { return b.score - a.score || String(a.item.nama_barang || '').localeCompare(String(b.item.nama_barang || ''), 'id'); })
+    .map(function(entry) { return entry.item; });
 
   if (filtered.length === 0) {
-    listWrapper.innerHTML = `<div style="text-align:center; padding:20px; color:#adb5bd; font-size:13px;">Barang tidak ditemukan.</div>`;
+    listWrapper.innerHTML = '<div style="text-align:center; padding:20px; color:#adb5bd; font-size:13px;">Barang tidak ditemukan.</div>';
     return;
   }
 
@@ -4882,21 +4896,15 @@ function renderReturProductList() {
     let div = document.createElement("div");
     div.className = "pos-item-row";
     div.onclick = function() { tambahKeKeranjangRetur(item); };
-    
-    let cartItem = keranjangRetur.find(k => k.id_barang === item.id_barang && k.mode === currentReturMode);
-    let qtyBadge = cartItem ? `<div class="pos-item-qty-badge" style="border-color:#dc3545; color:#dc3545;">${cartItem.qty}</div>` : '';
-    let imgUrl = item.gambar ? item.gambar : 'https://via.placeholder.com/45?text=No+Img';
-    
-    let badgeModeText = currentReturMode === 'retur' ? '<span style="color:#dc3545; font-weight:bold; font-size:11px;">[RETUR / MASUK STOK]</span>' : '<span style="color:#198754; font-weight:bold; font-size:11px;">[BELI / KELUAR STOK]</span>';
-
-    div.innerHTML = `
-      <img src="${imgUrl}" class="pos-item-icon" style="object-fit:cover; border:1px solid #dee2e6; background:#fff;" onerror="this.onerror=null;this.src='https://via.placeholder.com/45?text=Img';">
-      <div class="pos-item-details">
-        <div class="pos-item-title">${item.nama_barang}</div>
-        <div class="pos-item-meta">${badgeModeText} &bull; Stok: <b style="color:#000;">${item.stok}</b> &bull; Rp ${Number(item.harga_jual).toLocaleString('id-ID')}</div>
-      </div>
-      ${qtyBadge}
-    `;
+    let cartItem = keranjangRetur.find(k => String(k.id_barang) === String(item.id_barang) && k.mode === currentReturMode);
+    let qtyBadge = cartItem ? '<div class="pos-item-qty-badge" style="border-color:#dc3545; color:#dc3545;">' + cartItem.qty + '</div>' : '';
+    let imgUrl = item.gambar ? item.gambar : "https://via.placeholder.com/45?text=No+Img";
+    let badgeModeText = currentReturMode === "retur"
+      ? '<span style="color:#dc3545; font-weight:bold; font-size:11px;">[RETUR / MASUK STOK]</span>'
+      : '<span style="color:#198754; font-weight:bold; font-size:11px;">[BELI / KELUAR STOK]</span>';
+    div.innerHTML = '<img src="' + imgUrl + '" class="pos-item-icon" style="object-fit:cover; border:1px solid #dee2e6; background:#fff;" onerror="this.onerror=null;this.src=\'https://via.placeholder.com/45?text=Img\';">' +
+      '<div class="pos-item-details"><div class="pos-item-title">' + item.nama_barang + '</div>' +
+      '<div class="pos-item-meta">' + badgeModeText + ' &bull; Stok: <b style="color:#000;">' + item.stok + '</b> &bull; Rp ' + Number(item.harga_jual).toLocaleString("id-ID") + '</div></div>' + qtyBadge;
     listWrapper.appendChild(div);
   });
 }
