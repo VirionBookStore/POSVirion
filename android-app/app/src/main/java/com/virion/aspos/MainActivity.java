@@ -11,6 +11,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
+import android.content.ContentValues;
+import android.provider.MediaStore;
+import java.io.OutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -33,12 +40,15 @@ public class MainActivity extends Activity {
         setContentView(webView);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setFocusable(true);
+        settings.setFocusableInTouchMode(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
+        webView.addJavascriptInterface(new AndroidFileBridge(), "ASPosAndroid");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
@@ -100,6 +110,49 @@ public class MainActivity extends Activity {
         });
         if (state == null) webView.loadUrl("https://virionbookstore.github.io/POSVirion/");
         else webView.restoreState(state);
+    }
+
+    /** Bridge khusus file backup dari halaman POS tepercaya. */
+    private final class AndroidFileBridge {
+        @JavascriptInterface
+        public String saveTextFile(String fileName, String content, String mimeType) {
+            try {
+                String safeName = (fileName == null || fileName.trim().isEmpty())
+                    ? "Backup_ASPOS.json" : fileName.replaceAll("[^A-Za-z0-9._-]", "_");
+                byte[] bytes = (content == null ? "" : content).getBytes(StandardCharsets.UTF_8);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, safeName);
+                    values.put(MediaStore.Downloads.MIME_TYPE,
+                        mimeType == null ? "application/json" : mimeType);
+                    values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    values.put(MediaStore.Downloads.IS_PENDING, 1);
+                    Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (uri == null) return "ERROR:Gagal membuat file di folder Download.";
+                    try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                        if (out == null) throw new Exception("Tidak dapat membuka file tujuan.");
+                        out.write(bytes);
+                        out.flush();
+                    }
+                    ContentValues done = new ContentValues();
+                    done.put(MediaStore.Downloads.IS_PENDING, 0);
+                    getContentResolver().update(uri, done, null, null);
+                } else {
+                    File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!dir.exists() && !dir.mkdirs()) return "ERROR:Gagal membuat folder Download.";
+                    File file = new File(dir, safeName);
+                    try (FileOutputStream out = new FileOutputStream(file)) {
+                        out.write(bytes);
+                        out.flush();
+                    }
+                }
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                    "Backup tersimpan di folder Download: " + safeName, Toast.LENGTH_LONG).show());
+                return "OK:" + safeName;
+            } catch (Exception e) {
+                return "ERROR:" + (e.getMessage() == null ? "Gagal menyimpan file." : e.getMessage());
+            }
+        }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
