@@ -4929,6 +4929,9 @@ function tambahKeKeranjangRetur(item) {
       supplier: item.supplier,
       harga_jual: Number(item.harga_jual),
       qty: 1,
+      disc_type: 'Rp',
+      disc_val: 0,
+      subtotal: Number(item.harga_jual),
       mode: currentReturMode // 'retur' atau 'beli'
     });
   }
@@ -4949,24 +4952,30 @@ function renderKeranjangRetur() {
   }
 
   keranjangRetur.forEach((k, idx) => {
-    let subtotal = k.harga_jual * k.qty;
-    totalItemCount += k.qty;
+    const bruto = (Number(k.harga_jual) || 0) * (Number(k.qty) || 0);
+    const discVal = Number(k.disc_val) || 0;
+    const discPerUnit = k.disc_type === '%' ? (Number(k.harga_jual) || 0) * Math.min(100, Math.max(0, discVal)) / 100 : Math.min(Number(k.harga_jual) || 0, Math.max(0, discVal));
+    const subtotal = Math.max(0, bruto - discPerUnit * (Number(k.qty) || 0));
+    totalItemCount += Number(k.qty) || 0;
     if (k.mode === 'retur') totalMin += subtotal;
     else totalPlus += subtotal;
 
-    let itemMaster = globalDataBarang.find(b => b.id_barang === k.id_barang);
+    let itemMaster = globalDataBarang.find(b => String(b.id_barang || '').trim() === String(k.id_barang || '').trim());
     let imgUrl = itemMaster && itemMaster.gambar ? itemMaster.gambar : 'https://via.placeholder.com/55?text=Img';
     let badgeColor = k.mode === 'retur' ? '#dc3545' : '#198754';
     let modeLabel = k.mode === 'retur' ? 'Retur (Masuk Stok)' : 'Beli (Barang Baru)';
+    const discText = discPerUnit > 0 ? `<div style="color:#dc3545;font-size:11px;">Potongan: Rp ${(discPerUnit * k.qty).toLocaleString('id-ID')}</div>` : '';
 
     var div = document.createElement("div");
     div.className = "cart-item-row";
     div.innerHTML = `
-      <img src="${imgUrl}" class="cart-item-img" onerror="this.onerror=null;this.src='https://via.placeholder.com/55';">
-      <div class="cart-item-info">
+      <img src="${imgUrl}" class="cart-item-img" onclick="bukaModalEditItemRetur(${idx})" style="cursor:pointer;" onerror="this.onerror=null;this.src='https://via.placeholder.com/55';">
+      <div class="cart-item-info" onclick="bukaModalEditItemRetur(${idx})" style="cursor:pointer;">
         <div class="cart-item-title">${k.nama_barang}</div>
         <div style="font-size:11px; font-weight:bold; color:${badgeColor};">${modeLabel}</div>
-        <div class="cart-item-price">${k.qty} x Rp ${k.harga_jual.toLocaleString('id-ID')} = <b>Rp ${subtotal.toLocaleString('id-ID')}</b></div>
+        <div class="cart-item-price">${k.qty} x Rp ${Number(k.harga_jual).toLocaleString('id-ID')} = <b>Rp ${subtotal.toLocaleString('id-ID')}</b></div>
+        ${discText}
+        <div style="font-size:10px;color:#198754;font-style:italic;margin-top:3px;">Klik untuk atur harga/diskon</div>
       </div>
       <div class="cart-item-controls">
         <div class="qty-control">
@@ -6840,7 +6849,94 @@ function prosesCheckoutReturFinal() {
     // Catat cabang yang diambil saat sinkronisasi master agar cache tidak salah cabang.
     // Periksa koneksi dan data melalui menu Manajemen Database Lokal.
     </script>
-  <!-- MODAL KERANJANG & PEMBAYARAN RETUR -->
+  <!-- Edit harga dan diskon per item retur/tukar -->
+<div id="modalEditItemRetur" class="modal">
+  <div class="modal-content" style="max-width:420px;border-radius:12px;">
+    <div class="modal-header" style="background:#dc3545;color:#fff;">
+      <h3 style="margin:0;font-size:16px;">Ubah Harga / Potongan Retur</h3>
+      <button class="close-btn" onclick="tutupModalEditItemRetur()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:16px;">
+      <input type="hidden" id="editItemReturIndex">
+      <div id="editItemReturNama" style="font-weight:700;margin-bottom:4px;"></div>
+      <div id="editItemReturId" style="font-size:12px;color:#6c757d;margin-bottom:14px;"></div>
+      <label style="display:block;font-size:13px;font-weight:700;margin-bottom:5px;">Harga per barang (Rp)</label>
+      <input id="editItemReturHarga" type="number" min="0" class="form-control" style="margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin-bottom:8px;">
+        <input type="checkbox" id="editItemReturUseDisc"> Terapkan potongan per barang
+      </label>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input id="editItemReturDiscVal" type="number" min="0" class="form-control" value="0">
+        <select id="editItemReturDiscType" class="form-control" style="max-width:100px;">
+          <option value="Rp">Rp</option><option value="%">%</option>
+        </select>
+      </div>
+      <div style="padding:10px;background:#f8f9fa;border-radius:8px;font-size:13px;">
+        <div>Jumlah: <b id="editItemReturQty"></b></div>
+        <div>Potongan total: <b id="editItemReturDiscTotal">Rp 0</b></div>
+        <div>Total setelah potongan: <b id="editItemReturSubtotal">Rp 0</b></div>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-outline" onclick="tutupModalEditItemRetur()">Batal</button>
+      <button type="button" class="btn btn-danger" style="background:#dc3545;color:white;" onclick="simpanEditItemRetur()">Simpan perubahan</button>
+    </div>
+  </div>
+</div>
+<script>
+function hitungEditItemRetur() {
+  const price = Math.max(0, Number(document.getElementById('editItemReturHarga').value) || 0);
+  const qty = Math.max(1, Number(document.getElementById('editItemReturQty').textContent) || 1);
+  const useDisc = document.getElementById('editItemReturUseDisc').checked;
+  const val = Math.max(0, Number(document.getElementById('editItemReturDiscVal').value) || 0);
+  const type = document.getElementById('editItemReturDiscType').value;
+  const perUnit = useDisc ? (type === '%' ? price * Math.min(100, val) / 100 : Math.min(price, val)) : 0;
+  document.getElementById('editItemReturDiscTotal').textContent = 'Rp ' + Math.round(perUnit * qty).toLocaleString('id-ID');
+  document.getElementById('editItemReturSubtotal').textContent = 'Rp ' + Math.max(0, Math.round((price - perUnit) * qty)).toLocaleString('id-ID');
+}
+function bukaModalEditItemRetur(idx) {
+  const item = keranjangRetur[idx];
+  if (!item) return;
+  document.getElementById('editItemReturIndex').value = idx;
+  document.getElementById('editItemReturNama').textContent = item.nama_barang || '';
+  document.getElementById('editItemReturId').textContent = item.id_barang || '';
+  document.getElementById('editItemReturHarga').value = Number(item.harga_jual) || 0;
+  document.getElementById('editItemReturQty').textContent = Number(item.qty) || 1;
+  document.getElementById('editItemReturUseDisc').checked = Number(item.disc_val) > 0;
+  document.getElementById('editItemReturDiscVal').value = Number(item.disc_val) || 0;
+  document.getElementById('editItemReturDiscType').value = item.disc_type || 'Rp';
+  document.getElementById('modalEditItemRetur').style.display = 'flex';
+  hitungEditItemRetur();
+}
+function tutupModalEditItemRetur() {
+  document.getElementById('modalEditItemRetur').style.display = 'none';
+}
+function simpanEditItemRetur() {
+  const idx = Number(document.getElementById('editItemReturIndex').value);
+  const item = keranjangRetur[idx];
+  if (!item) return tutupModalEditItemRetur();
+  const price = Math.max(0, Number(document.getElementById('editItemReturHarga').value) || 0);
+  const useDisc = document.getElementById('editItemReturUseDisc').checked;
+  const val = Math.max(0, Number(document.getElementById('editItemReturDiscVal').value) || 0);
+  const type = document.getElementById('editItemReturDiscType').value === '%' ? '%' : 'Rp';
+  if (useDisc && type === '%' && val > 100) return alert('Diskon persen maksimal 100%.');
+  item.harga_jual = price;
+  item.disc_type = useDisc ? type : 'Rp';
+  item.disc_val = useDisc ? val : 0;
+  const perUnit = item.disc_type === '%' ? price * Math.min(100, item.disc_val) / 100 : Math.min(price, item.disc_val);
+  item.subtotal = Math.max(0, Math.round((price - perUnit) * Number(item.qty)));
+  tutupModalEditItemRetur();
+  renderKeranjangRetur();
+}
+document.addEventListener('input', function(e) {
+  if (e.target && ['editItemReturHarga','editItemReturDiscVal'].includes(e.target.id)) hitungEditItemRetur();
+});
+document.addEventListener('change', function(e) {
+  if (e.target && ['editItemReturUseDisc','editItemReturDiscType'].includes(e.target.id)) hitungEditItemRetur();
+});
+</script>
+
+<!-- MODAL KERANJANG & PEMBAYARAN RETUR -->
 <div id="modalKeranjangRetur" class="modal">
   <div class="modal-content" style="max-width: 500px; max-height: 85vh; border-radius: 12px;">
     <div class="modal-header" style="background-color: #dc3545;">
