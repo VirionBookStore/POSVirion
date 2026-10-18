@@ -333,7 +333,7 @@
       <form id="formLogin" onsubmit="handleLoginSubmit(event)">
         <div class="form-group">
           <label>Email User:</label>
-          <input type="email" class="form-control" name="email" id="loginEmail" placeholder="Masukkan email..." required>
+          <input type="text" inputmode="email" autocapitalize="none" autocomplete="username" autocorrect="off" spellcheck="false" class="form-control" name="email" id="loginEmail" placeholder="Masukkan email..." required>
         </div>
         <div class="form-group">
           <label>Password / PIN:</label>
@@ -5984,25 +5984,33 @@ function prosesCheckoutReturFinal() {
           const blob = new Blob([JSON.stringify(exportData)], {type:'application/json;charset=utf-8'});
           const fileName = 'Backup_ASPOS_' + new Date().toISOString().slice(0,10) + '.json';
 
-          // Tombol "Download Backup" harus benar-benar mengunduh file.
-          // Jangan gunakan navigator.share di sini karena pada Android ia hanya
-          // membuka menu berbagi dan tidak selalu memberi opsi Simpan File.
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          a.target = '_blank';
-          a.rel = 'noopener';
-          a.style.display = 'none';
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(function(){
-            a.remove();
-            URL.revokeObjectURL(url);
-          }, 3000);
-
-          if(btn) btn.innerText='✅ File backup dibuat';
-          setTimeout(function(){ if(btn){btn.innerText='Download Backup';btn.disabled=false;} },2000);
+          // Di APK WebView, blob: tidak dapat diunduh oleh DownloadManager.
+          // Simpan langsung lewat bridge Android ke folder Download.
+          if (window.ASPosAndroid && typeof window.ASPosAndroid.saveTextFile === 'function') {
+            const result = window.ASPosAndroid.saveTextFile(
+              fileName, JSON.stringify(exportData), 'application/json'
+            );
+            if (!result || String(result).indexOf('OK:') !== 0) {
+              throw new Error(String(result || 'Android gagal menyimpan file.').replace(/^ERROR:/, ''));
+            }
+            if(btn) btn.innerText='✅ Backup tersimpan';
+            alert('Backup berhasil disimpan ke folder Download HP.\\n\\nFile: ' + fileName);
+          } else {
+            // Browser biasa: unduh melalui tautan blob seperti sebelumnya.
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function(){
+              a.remove();
+              URL.revokeObjectURL(url);
+            }, 3000);
+            if(btn) btn.innerText='✅ File backup dibuat';
+          }
+          setTimeout(function(){ if(btn){btn.innerText='Download Backup';btn.disabled=false;} },2500);
         } catch(err) {
           console.error('[AS-Pos] backup', err);
           if(btn) { btn.innerText='Download Backup'; btn.disabled=false; }
