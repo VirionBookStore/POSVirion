@@ -268,6 +268,12 @@
 
   /* Tata letak ringkas khusus HP/APK. Desktop tidak diubah. */
   @media screen and (max-width: 600px) {
+    /* Kasir: filter cabang owner dipersempit, ruang pencarian diperbesar */
+    #sec-posKasir .pos-search-wrapper { gap: 8px; padding: 10px 12px; }
+    #sec-posKasir #posPilihCabang { flex: 0 0 112px !important; width: 112px !important; min-width: 0 !important; margin-right: 0 !important; padding: 10px 5px !important; font-size: 13px !important; }
+    #sec-posKasir #searchPosMobile { flex: 1 1 auto !important; width: 0 !important; min-width: 0 !important; padding: 10px 9px !important; font-size: 15px !important; }
+    #sec-posKasir .btn-scan-mobile { flex: 0 0 48px; padding: 10px 8px; }
+
     /* Dashboard: empat ringkasan dalam satu baris */
     .dashboard-summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; }
     .dashboard-summary-card { min-width: 0; min-height: 0; padding: 8px 4px; gap: 0; justify-content: center; text-align: center; }
@@ -2480,9 +2486,18 @@ function renderPosProductList() {
   let activeBarang = globalDataBarang.filter(item => item.status !== "Tidak Aktif");
 
   // Filter berdasarkan Supplier & Search
+  // Pencarian fleksibel: cocok dengan potongan nama/kode, atau awalan beberapa kata
+  // sehingga kata awal + kata akhir judul bisa dicari tanpa mengetik judul lengkap.
+  const queryParts = keyword.trim().split(/\\s+/).filter(Boolean);
   let filtered = activeBarang.filter(item => {
     let matchSup = (currentPosSupplier === "Semua") || (String(item.supplier || "").toLowerCase() === currentPosSupplier);
-    let matchSearch = String(item.nama_barang || "").toLowerCase().includes(keyword) || String(item.id_barang || "").toLowerCase().includes(keyword);
+    const title = String(item.nama_barang || "").toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+    const code = String(item.id_barang || "").toLowerCase();
+    const words = title.split(/[^a-z0-9]+/).filter(Boolean);
+    const matchSearch = !keyword.trim() ||
+      title.includes(keyword.trim()) ||
+      code.includes(keyword.trim()) ||
+      queryParts.every(part => words.some(word => word.startsWith(part)));
     return matchSup && matchSearch;
   });
 
