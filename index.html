@@ -7104,9 +7104,15 @@ document.addEventListener('change', function(e) {
     }
   });
 
+  // Pindah tab/aplikasi atau layar mati tidak boleh memunculkan dialog.
+  // pageshow hanya dipakai untuk memastikan penjaga aktif saat halaman benar-benar tampil.
   window.addEventListener('pageshow', function() {
     guardArmed = false;
     armBackGuard();
+  });
+  window.addEventListener('visibilitychange', function() {
+    // Sengaja tidak menampilkan konfirmasi pada visibilitychange.
+    // Dialog hanya muncul dari popstate (tombol/navigasi Back).
   });
 })();
 </script>
