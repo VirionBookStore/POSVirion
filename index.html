@@ -7063,5 +7063,43 @@ document.addEventListener('change', function(e) {
 })();
 </script>
 
+<script id="asposBackButtonGuard">
+(function installAsposBackButtonGuard() {
+  if (window.__asposBackButtonGuardInstalled) return;
+  window.__asposBackButtonGuardInstalled = true;
+
+  var allowBackNavigation = false;
+  function armBackGuard() {
+    try {
+      history.pushState({ asposBackGuard: true }, '', location.href);
+    } catch (err) {
+      console.warn('[AS-Pos] Tidak dapat mengaktifkan pengaman tombol kembali:', err);
+    }
+  }
+
+  // Tambahkan satu entri riwayat khusus agar tombol Back Android/browser
+  // memunculkan konfirmasi sebelum meninggalkan aplikasi.
+  armBackGuard();
+  window.addEventListener('popstate', function() {
+    if (allowBackNavigation) return;
+    var leave = window.confirm(
+      'Apakah Anda yakin ingin keluar dari aplikasi POSVirion?\n\n' +
+      'Jika masih ada transaksi yang belum diselesaikan, periksa kembali sebelum keluar.'
+    );
+    if (leave) {
+      allowBackNavigation = true;
+      history.back();
+    } else {
+      armBackGuard();
+    }
+  });
+
+  // Jika pengguna kembali ke halaman ini melalui navigasi browser, pasang
+  // pengaman lagi tanpa mengganggu tombol atau menu di dalam aplikasi.
+  window.addEventListener('pageshow', function() {
+    if (!allowBackNavigation) armBackGuard();
+  });
+})();
+</script>
 </body>
 </html>
