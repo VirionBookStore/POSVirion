@@ -854,12 +854,12 @@
               <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
                 <span>Riwayat Transaksi Penjualan</span>
                 <input type="text" id="searchRiwayatInput" class="search-box" placeholder="Cari Nota, Kasir..." oninput="filterRiwayatTransaksi()" style="width:min(260px, 100%); padding:7px 10px; font-size:12px;">
-              </div>
-              <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
                 <div class="history-branch-filter">
                   <label style="display:block; font-size:12px; margin-bottom:4px;">Cabang</label>
                   <select id="filterRiwayatCabang" class="form-control" onchange="filterRiwayatTransaksi()" style="display:none; min-width:145px;"></select>
                 </div>
+              </div>
+              <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
                 <div class="history-date-filters"><label for="filterRiwayatStart" style="display:block; font-size:12px; margin-bottom:4px;">Dari Tanggal</label><input type="date" id="filterRiwayatStart" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
                 <div class="history-date-filters"><label for="filterRiwayatEnd" style="display:block; font-size:12px; margin-bottom:4px;">Sampai Tanggal</label><input type="date" id="filterRiwayatEnd" class="form-control" onchange="filterRiwayatTransaksi()" style="min-width:145px;"></div>
                 <button type="button" class="btn btn-outline btn-sm" onclick="resetFilterRiwayat()">Reset Filter</button>
