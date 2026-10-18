@@ -4853,25 +4853,49 @@ function renderReturProductList() {
   let searchEl = document.getElementById("searchReturPos");
   if(!listWrapper || !searchEl) return;
   
-  // Samakan perilaku pencarian dengan kasir: kata boleh ditemukan di posisi
-  // mana pun dan urutannya tidak harus sama dengan nama barang.
+  // Pencarian multi-kata: semua kata harus cocok pada nama barang ATAU
+  // semua kata harus cocok pada kode barang. Jangan mencampur kecocokan nama
+  // dengan kode, karena itu membuat "dilan 1997" menampilkan semua judul Dilan.
   const normalizeSearch = function(value) {
-    return String(value == null ? '' : value).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+    return String(value == null ? '' : value)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .replace(/\\s+/g, ' ')
+      .trim();
   };
-  const keyword = normalizeSearch(searchEl.value).trim();
-  const queryParts = keyword.split(/\\s+/).filter(Boolean);
+  const keyword = normalizeSearch(searchEl.value);
+  const queryParts = keyword ? keyword.split(' ').filter(Boolean) : [];
   listWrapper.innerHTML = "";
 
-  let activeBarang = globalDataBarang.filter(item => item && item.status !== "Tidak Aktif");
+  let activeBarang = globalDataBarang.filter(item =>
+    item && String(item.status || '').trim().toLowerCase() !== 'tidak aktif'
+  );
   let filtered = activeBarang.filter(item => {
-    let matchSup = (currentReturSupplier === "Semua") || (String(item.supplier || "").trim().toLowerCase() === currentReturSupplier);
+    const itemSupplier = normalizeSearch(item.supplier);
+    const selectedSupplier = normalizeSearch(currentReturSupplier);
+    const matchSup = !selectedSupplier || selectedSupplier === 'semua' || itemSupplier === selectedSupplier;
     const title = normalizeSearch(item.nama_barang);
     const code = normalizeSearch(item.id_barang);
-    const matchSearch = !queryParts.length || queryParts.every(function(part) {
-      return title.includes(part) || code.includes(part);
-    });
-    return matchSup && matchSearch;
+    const matchTitle = !queryParts.length || queryParts.every(part => title.includes(part));
+    const matchCode = !queryParts.length || queryParts.every(part => code.includes(part));
+    return matchSup && (matchTitle || matchCode);
   });
+
+  // Prioritaskan judul yang paling relevan, tanpa membuang hasil valid lainnya.
+  if (queryParts.length > 0) {
+    filtered.sort((a, b) => {
+      const titleA = normalizeSearch(a.nama_barang);
+      const titleB = normalizeSearch(b.nama_barang);
+      const codeA = normalizeSearch(a.id_barang);
+      const codeB = normalizeSearch(b.id_barang);
+      const score = title => title === keyword ? 0 : title.startsWith(keyword) ? 1 : 2;
+      const scoreA = queryParts.every(part => titleA.includes(part)) ? score(titleA) : 3;
+      const scoreB = queryParts.every(part => titleB.includes(part)) ? score(titleB) : 3;
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return titleA.localeCompare(titleB, 'id');
+    });
+  }
 
   if (filtered.length === 0) {
     listWrapper.innerHTML = `<div style="text-align:center; padding:20px; color:#adb5bd; font-size:13px;">Barang tidak ditemukan.</div>`;
