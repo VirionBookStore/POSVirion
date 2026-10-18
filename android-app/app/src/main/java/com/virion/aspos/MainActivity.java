@@ -40,8 +40,8 @@ public class MainActivity extends Activity {
         setContentView(webView);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
-        settings.setFocusable(true);
-        settings.setFocusableInTouchMode(true);
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
