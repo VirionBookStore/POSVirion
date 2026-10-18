@@ -1741,7 +1741,9 @@ window.loadBarang = async function(isLocalOnly = false) {
 
   function tampilkan(data) {
     globalDataBarang = Array.isArray(data) ? data : [];
-    if (typeof renderTabelBarang === 'function') renderTabelBarang(globalDataBarang);
+    var searchInput = document.getElementById('searchInput');
+    if (searchInput && searchInput.value && typeof filterTable === 'function') filterTable();
+    else if (typeof renderTabelBarang === 'function') renderTabelBarang(globalDataBarang);
     if (typeof renderPosProductList === 'function') renderPosProductList();
   }
 
