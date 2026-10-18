@@ -7104,6 +7104,15 @@ document.addEventListener('change', function(e) {
     }
   });
 
+  // Menu SPA memakai tautan href="#". Cegah tautan tersebut membuat entri riwayat
+  // browser, karena tombol Kembali setelah pindah menu dapat dianggap sebagai keluar.
+  document.addEventListener('click', function(event) {
+    var link = event.target && event.target.closest
+      ? event.target.closest('.sidebar-menu a[href="#"]')
+      : null;
+    if (link) event.preventDefault();
+  }, true);
+
   // Pindah tab/aplikasi atau layar mati tidak boleh memunculkan dialog.
   // pageshow hanya dipakai untuk memastikan penjaga aktif saat halaman benar-benar tampil.
   window.addEventListener('pageshow', function() {
