@@ -5028,9 +5028,33 @@ function prosesCheckoutReturFinal() {
             el.dispatchEvent(new Event('input', { bubbles: true }));
           }
 
-          // Tampilkan barang hasil scan terlebih dahulu agar kasir bisa memeriksa judul.
-          // Barang baru masuk keranjang setelah kasir mengetuk baris hasil pencarian.
-          if (typeof handlePosSearchMobile === 'function') {
+          // Scan langsung menambahkan barang ke keranjang, lalu tampilkan judulnya
+          // di daftar beserta badge jumlah (misalnya 1) agar kasir bisa memverifikasi.
+          const normalizeCode = function(v) {
+            return String(v == null ? '' : v).trim().toLowerCase().replace(/\\s+/g, '');
+          };
+          const scannedCode = normalizeCode(scanned);
+          const sourceBarang = (typeof globalDataBarang !== 'undefined' && Array.isArray(globalDataBarang))
+            ? globalDataBarang : [];
+          const item = sourceBarang.find(function(b) {
+            if (!b || b.status === 'Tidak Aktif') return false;
+            return normalizeCode(b.id_barang) === scannedCode ||
+              normalizeCode(b.barcode) === scannedCode ||
+              normalizeCode(b.kode_barcode) === scannedCode;
+          });
+
+          if (item && typeof tambahKeKeranjang === 'function') {
+            tambahKeKeranjang(item);
+            // Ganti teks pencarian dengan nama barang supaya judul dan badge qty
+            // tetap terlihat setelah barang masuk keranjang.
+            if (el) {
+              el.value = String(item.nama_barang || '');
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (typeof renderPosProductList === 'function') renderPosProductList();
+          } else if (typeof handlePosSearchMobile === 'function') {
+            // Jika barcode belum cocok dengan data barang, tampilkan hasil pencarian kode.
+            if (el) el.value = scanned;
             handlePosSearchMobile();
           }
         });
