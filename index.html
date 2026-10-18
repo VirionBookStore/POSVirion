@@ -905,7 +905,10 @@
             <div class="card-header">
               <span>Laporan Penjualan</span>
               <div class="report-export-toolbar" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                
+                <div id="wrapperDropdownCabangBarang" style="display: none;">
+                  <label style="font-size: 12px; font-weight: bold; color: #6c757d;">Pilih Cabang</label>
+                  <select id="filterBarangCabang" class="form-control" style="width: 170px;"></select>
+                </div>
                 <button class="btn btn-outline btn-sm" onclick="exportPenjualanPerBarangExcel(false)">📊 Export Excel</button>
                 <button class="btn btn-primary btn-sm" onclick="exportPenjualanPerBarangExcel(true)">📤 Share Excel</button>
               </div>
@@ -921,12 +924,7 @@
                     <option value="supplier">Filter per Supplier</option>
                   </select>
                 </div>
-                <!-- TAMBAHKAN KODE INI DI SINI -->
-                  <div id="wrapperDropdownCabangBarang" style="display: none;">
-                    <label style="font-size: 12px; font-weight: bold; color: #6c757d;">Pilih Cabang</label>
-                    <select id="filterBarangCabang" class="form-control" style="width: 170px;"></select>
-                  </div>
-                  <!-- ========================== -->
+
                 <div id="wrapperDropdownKasir" style="display: none;">
                   <label style="font-size: 12px; font-weight: bold; color: #6c757d;">Pilih Kasir</label>
                   <select id="filterPilihKasir" class="form-control" style="width: 170px;">
