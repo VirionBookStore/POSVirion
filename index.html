@@ -3844,13 +3844,32 @@ function simpanEditItemModal() {
       var input = document.getElementById("searchInput");
       var keyword = String(input ? input.value : '').trim().toLocaleLowerCase('id-ID');
       var source = Array.isArray(globalDataBarang) ? globalDataBarang : [];
-      var filtered = !keyword ? source : source.filter(function(item) {
-        return String(item.nama_barang || '').toLocaleLowerCase('id-ID').includes(keyword) ||
-          String(item.id_barang || '').toLocaleLowerCase('id-ID').includes(keyword) ||
-          String(item.supplier || '').toLocaleLowerCase('id-ID').includes(keyword) ||
-          String(item.kategori || '').toLocaleLowerCase('id-ID').includes(keyword) ||
-          String(item.id_cabang || '').toLocaleLowerCase('id-ID').includes(keyword);
+
+      // Pencarian fleksibel: urutan kata bebas, dan setiap potongan kata boleh
+      // berada di bagian mana pun dari nama/kode/supplier/kategori.
+      // Contoh "dilan 1997" tetap cocok meskipun kata tidak bersebelahan.
+      function normalisasiCari(value) {
+        return String(value == null ? '' : value)
+          .toLocaleLowerCase('id-ID')
+          .normalize('NFD')
+          .replace(/[\\u0300-\\u036f]/g, '')
+          .replace(/[^\\p{L}\\p{N}]+/gu, ' ')
+          .trim()
+          .replace(/\\s+/g, ' ');
+      }
+
+      var kataCari = normalisasiCari(keyword).split(' ').filter(Boolean);
+      var filtered = !kataCari.length ? source : source.filter(function(item) {
+        var gabungan = normalisasiCari([
+          item.nama_barang, item.id_barang, item.supplier,
+          item.kategori, item.id_cabang
+        ].join(' '));
+        // Semua kata harus ditemukan, tetapi tidak harus berdampingan/berurutan.
+        return kataCari.every(function(kata) {
+          return gabungan.includes(kata);
+        });
       });
+
       // Jangan ubah globalDataBarang saat pencarian; data lengkap tetap dipakai
       // untuk edit, POS, dan sinkronisasi. Render hanya halaman hasil pencarian.
       masterBarangViewData = filtered;
