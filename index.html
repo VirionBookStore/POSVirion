@@ -1879,23 +1879,6 @@ async function loadDashboardByDate() {
 
   google.script.run
     .withSuccessHandler(async function(data) {
-  var startStr = document.getElementById('dashboardStartDate') ? document.getElementById('dashboardStartDate').value : '';
-  var endStr = document.getElementById('dashboardEndDate') ? document.getElementById('dashboardEndDate').value : '';
-  var btn = document.getElementById('btnDashboardDate');
-  var tbody = document.querySelector('#tabelDashboardPenjualan tbody');
-  var branchEl = document.getElementById("dashboardPilihCabang");
-  var branchId = (isOwner() && branchEl) ? branchEl.value : (currentUser ? currentUser.id_cabang : '');
-
-  if (!startStr || !endStr) return alert('Silakan pilih rentang tanggal penjualan terlebih dahulu.');
-
-  // Dashboard harus memakai agregasi server yang sudah memperhitungkan
-  // transaksi penjualan, retur, dan tukar barang. Cache IndexedDB dapat tertinggal
-  // atau tidak memuat detail retur, sehingga tidak boleh menjadi sumber angka final.
-  if (btn) { btn.disabled = true; btn.innerText = 'Memuat...'; }
-  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data dari server...</td></tr>';
-
-  google.script.run
-    .withSuccessHandler(async function(data) {
       // Angka ringkasan tetap memakai hasil server, lalu lengkapi tabel rincian
       // dengan item nota retur/tukar (qty/subtotal negatif) agar sumber pengurangan
       // pendapatan terlihat jelas pada Dashboard.
