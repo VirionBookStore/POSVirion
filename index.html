@@ -4436,7 +4436,10 @@ function prosesCheckoutReturFinal() {
     }
     let asposPendingSyncRunning = false;
     async function syncPendingTransactions() {
-      if (asposPendingSyncRunning || !asposIsOnline()) return;
+      // Jangan kirim antrean sebelum ada pengguna yang berhasil login.
+      // Pada perangkat bersama, antrean cabang lain harus tetap menunggu
+      // sampai pengguna yang sesuai login (Owner boleh menangani semua cabang).
+      if (asposPendingSyncRunning || !asposIsOnline() || !currentUser) return;
       asposPendingSyncRunning = true;
       try {
         await new Promise(function(resolve, reject) {
@@ -4444,8 +4447,22 @@ function prosesCheckoutReturFinal() {
         });
         const list = await getAllFromStore('pendingTransactions');
         list.sort(function(a,b){ return String(a.createdAt).localeCompare(String(b.createdAt)); });
+        const ownerCanSyncAllBranches = isOwner();
+        const currentBranchId = String(currentUser.id_cabang || '').trim();
         for (const item of list) {
           if (!asposIsOnline()) break;
+          const payload = item && item.payload ? item.payload : {};
+          const transactionBranchId = String(payload.id_cabang || item.id_cabang || '').trim();
+          if (!transactionBranchId) {
+            item.lastError = 'Sinkronisasi ditahan: ID cabang transaksi tidak tersedia.';
+            item.status = 'BLOCKED';
+            await putStore('pendingTransactions', item);
+            continue;
+          }
+          if (!ownerCanSyncAllBranches && (!currentBranchId || transactionBranchId !== currentBranchId)) {
+            // Jangan mengirim transaksi cabang A saat pengguna cabang B login.
+            continue;
+          }
           await syncOnePendingTransaction(item);
         }
       } catch(err) {
