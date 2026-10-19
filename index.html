@@ -6519,59 +6519,31 @@ function prosesCheckoutReturFinal() {
     async function asposLoadRiwayatLocalFirst() {
       var now = new Date();
       var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-      var start = document.getElementById('filterRiwayatStart');
-      var end = document.getElementById('filterRiwayatEnd');
+      var start = document.getElementById('filterRiwayatStart'), end = document.getElementById('filterRiwayatEnd');
       if (start && !start.value) start.value = today;
       if (end && !end.value) end.value = today;
+      var branchId = String((currentUser && currentUser.id_cabang) || '').trim();
+      var ready = false, localRows = [];
+      try { ready = await asposEnsureIndexedDB(); if (ready) localRows = await getAllFromStore('riwayatPenjualan'); }
+      catch (err) { console.warn('[AS-Pos] Cache riwayat:', err); }
+      var pending = (localRows || []).map(asposNormalizeRiwayatRow).filter(function(r) {
+        var status = String(r.sync_status || r.status || '').toUpperCase();
+        return status === 'PENDING' && (!branchId || String(r.id_cabang || '').trim() === branchId);
+      });
+      globalRiwayatData = pending;
+      if (pending.length) filterRiwayatTransaksi();
       try {
-        var ready = await asposEnsureIndexedDB();
-        var localRows = [];
-        if (ready) {
-          try { localRows = await getAllFromStore('riwayatPenjualan'); } catch (e) {}
-        }
-
-        // Server tetap menjadi sumber riwayat transaksi yang sudah tersimpan.
-        // IndexedDB menambahkan transaksi pending yang belum ada di server.
-        var serverRows = [];
-        var serverError = null;
-        try {
-          var response = await asposCallGasLocalFirst('getPenjualan', [
-            currentUser ? currentUser.id_cabang : '',
-            currentUser ? currentUser.role : ''
-          ]);
-          if (Array.isArray(response)) serverRows = response;
-          else if (response && Array.isArray(response.data)) serverRows = response.data;
-          else if (response && Array.isArray(response.items)) serverRows = response.items;
-          else throw new Error('Respons getPenjualan bukan array data.');
-        } catch (err) {
-          serverError = err;
-          console.warn('[AS-Pos] Riwayat server tidak dapat dimuat; menggunakan data lokal:', err);
-        }
-
-        var serverNormalized = serverRows.map(asposNormalizeRiwayatRow);
-        var serverKeys = new Set(serverNormalized.map(function(r) { return String(r.no_nota || '').trim(); }).filter(Boolean));
-        var localNormalized = localRows.map(asposNormalizeRiwayatRow);
-        var localOnly = localNormalized.filter(function(r) {
-          // Hanya transaksi pending yang belum terkirim boleh ditambahkan dari lokal.
-          // Cache lama yang tidak punya status sinkron dan tidak ditemukan di server
-          // jangan ditampilkan sebagai transaksi Rp 0 / undefined.
-          var status = String(r.sync_status || r.status || '').toUpperCase();
-          return status === 'PENDING';
-        });
-
-        globalRiwayatData = serverError
-          ? localNormalized
-          : serverNormalized.concat(localOnly.filter(function(r) {
-              var key = String(r.server_no_nota || r.no_nota || '').trim();
-              return !serverKeys.has(key);
-            }));
-
-        if (!globalRiwayatData.length && serverError) throw serverError;
+        var response = await asposCallGasLocalFirst('getPenjualan', [currentUser ? currentUser.id_cabang : '', currentUser ? currentUser.role : '']);
+        var serverRows = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
+        if (!serverRows) throw new Error('Respons getPenjualan bukan array data.');
+        var normalized = serverRows.map(asposNormalizeRiwayatRow);
+        var keys = new Set(normalized.map(function(r) { return String(r.no_nota || '').trim(); }).filter(Boolean));
+        var extra = pending.filter(function(r) { var key = String(r.server_no_nota || r.no_nota || '').trim(); return key && !keys.has(key); });
+        globalRiwayatData = normalized.concat(extra);
         filterRiwayatTransaksi();
       } catch (err) {
-        console.error('[AS-Pos] Riwayat penjualan:', err);
-        var tbody = document.querySelector('#tabelRiwayat tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Gagal memuat riwayat. Periksa koneksi atau sinkronkan data.</td></tr>';
+        console.warn('[AS-Pos] Refresh riwayat gagal; cache pending tetap digunakan:', err);
+        if (!pending.length) { var tbody = document.querySelector('#tabelRiwayat tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;">Server tidak tersedia dan belum ada transaksi lokal tertunda.</td></tr>'; }
       }
     }
     window.loadRiwayat = asposLoadRiwayatLocalFirst;
