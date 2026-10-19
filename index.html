@@ -6401,44 +6401,36 @@ function prosesCheckoutReturFinal() {
     window.loadSupplier = asposLoadSupplierLocalFirst;
 
     async function asposLoadPromoLocalFirst() {
-      try {
-        var ready = await asposEnsureIndexedDB();
-        var promo = [];
-        if (ready) {
-          try { promo = await getAllFromStore('promo'); } catch (e) {}
-        }
-        if (!promo.length) {
-          var result = await asposGetLocalOrServer('promo', 'getPromoList', []);
-          promo = result.data;
-        }
-        globalPromoData = promo;
-        if (ready) {
-          try {
-            var barang = await getAllFromStore('masterBarang');
-            if (barang.length) globalDataBarang = barang;
-          } catch (e) {}
-        }
-        var tbody = document.querySelector('#tabelPromo tbody');
-        if (!tbody) return;
+      var ready = false, local = [];
+      try { ready = await asposEnsureIndexedDB(); if (ready) local = await getAllFromStore('promo'); }
+      catch (e) { console.warn('[AS-Pos] Cache promo:', e); }
+      async function renderPromo(rows) {
+        globalPromoData = Array.isArray(rows) ? rows : [];
+        if (ready) { try { var barang = await getAllFromStore('masterBarang'); if (barang.length) globalDataBarang = barang; } catch (e) {} }
+        var tbody = document.querySelector('#tabelPromo tbody'); if (!tbody) return;
         tbody.innerHTML = '';
-        if (!promo.length) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Belum ada aturan promo. Silahkan import data promo.</td></tr>';
-          return;
-        }
-        promo.forEach(function(p) {
+        if (!globalPromoData.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Belum ada aturan promo. Silahkan import data promo.</td></tr>'; return; }
+        globalPromoData.forEach(function(p) {
           var found = (globalDataBarang || []).find(function(b) { return String(b.id_barang) === String(p.id_barang); });
           var nama = found ? found.nama_barang : '-';
           var tipe = p.tipe_promo == 1 ? 'Diskon (%)' : (p.tipe_promo == 2 ? 'Potongan Nominal' : 'Harga Bundling');
-          var nominal = Number(p.besaran_promo || 0).toLocaleString('id-ID');
-          var bundling = Number(p.harga_bundling || 0).toLocaleString('id-ID');
+          var nominal = Number(p.besaran_promo || 0).toLocaleString('id-ID'), bundling = Number(p.harga_bundling || 0).toLocaleString('id-ID');
           var tr = document.createElement('tr');
           tr.innerHTML = '<td><b>' + (p.id_barang || '') + '</b></td><td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + nama + '">' + nama + '</td><td><span style="background:#0d6efd;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;">' + tipe + '</span></td><td><b>' + (p.min_qty || 0) + '</b> pcs</td><td>' + (p.tipe_promo == 1 ? (p.besaran_promo || 0) + '%' : (p.tipe_promo == 2 ? 'Rp ' + nominal : '-')) + '</td><td>' + (p.tipe_promo == 3 ? 'Rp ' + bundling : '-') + '</td><td><b style="color:' + (p.status === 'Aktif' ? '#198754' : '#dc3545') + ';">' + (p.status || '-') + '</b></td>';
           tbody.appendChild(tr);
         });
+      }
+      if (local.length) await renderPromo(local);
+      else { var tbody = document.querySelector('#tabelPromo tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Memuat data promo…</td></tr>'; }
+      try {
+        var response = await asposCallGasLocalFirst('getPromoList', []);
+        var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
+        if (!server) throw new Error('Respons getPromoList bukan array data.');
+        if (ready) { try { await replaceStore('promo', server); } catch (e) { console.warn('[AS-Pos] Cache promo gagal diperbarui:', e); } }
+        await renderPromo(server);
       } catch (err) {
-        console.error('[AS-Pos] Promo:', err);
-        var tbody = document.querySelector('#tabelPromo tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#dc3545;">Gagal memuat promo. Periksa koneksi atau sinkronkan data.</td></tr>';
+        console.warn('[AS-Pos] Refresh promo gagal; cache tetap dipakai:', err);
+        if (!local.length) { var errorBody = document.querySelector('#tabelPromo tbody'); if (errorBody) errorBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#dc3545;">Promo belum tersedia di lokal dan server tidak dapat dihubungi.</td></tr>'; }
       }
     }
     window.loadPromoManajemen = asposLoadPromoLocalFirst;
