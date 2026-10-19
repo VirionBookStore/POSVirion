@@ -1945,15 +1945,32 @@ async function loadDashboardByDate() {
   var dashboardCacheKey = 'aspos_dashboard_cache_v1_' + String(branchId || 'Semua') + '_' + startStr + '_' + endStr;
   var hasDashboardCache = false;
   try {
-    var cachedDashboard = localStorage.getItem(dashboardCacheKey);
-    if (cachedDashboard) {
-      var cachedPayload = JSON.parse(cachedDashboard);
-      if (cachedPayload && cachedPayload.data) {
-        renderDashboardUI(cachedPayload.data, startStr, endStr);
+    var dbReadyDashboard = await asposEnsureIndexedDB();
+    if (dbReadyDashboard) {
+      var dashboardRows = await getAllFromStore('reportCache');
+      var dashboardRecord = dashboardRows.find(function(row) {
+        return row && row.cacheKey === dashboardCacheKey && row.data;
+      });
+      if (dashboardRecord) {
+        renderDashboardUI(dashboardRecord.data, startStr, endStr);
         hasDashboardCache = true;
       }
     }
-  } catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard tidak dapat dibaca:', cacheErr); }
+  } catch (dbCacheErr) {
+    console.warn('[AS-Pos] Cache Dashboard IndexedDB tidak dapat dibaca:', dbCacheErr);
+  }
+  if (!hasDashboardCache) {
+    try {
+      var cachedDashboard = localStorage.getItem(dashboardCacheKey);
+      if (cachedDashboard) {
+        var cachedPayload = JSON.parse(cachedDashboard);
+        if (cachedPayload && cachedPayload.data) {
+          renderDashboardUI(cachedPayload.data, startStr, endStr);
+          hasDashboardCache = true;
+        }
+      }
+    } catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard cadangan tidak dapat dibaca:', cacheErr); }
+  }
 
   if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Perbarui' : 'Memuat...'; }
   if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
@@ -2035,14 +2052,18 @@ async function loadDashboardByDate() {
         console.warn('[AS-Pos] Rincian retur Dashboard tidak dapat dilengkapi:', err);
       }
       renderDashboardUI(data, startStr, endStr);
+      try {
+        var cacheRecord = {cacheKey:dashboardCacheKey, savedAt:Date.now(), data:data, branchId:String(branchId || 'Semua'), start:startStr, end:endStr, type:'dashboard'};
+        if (await asposEnsureIndexedDB()) await putStore('reportCache', cacheRecord);
+      } catch (dbCacheErr) { console.warn('[AS-Pos] Cache Dashboard IndexedDB gagal disimpan:', dbCacheErr); }
       try { localStorage.setItem(dashboardCacheKey, JSON.stringify({savedAt: Date.now(), data: data})); }
-      catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard tidak dapat disimpan:', cacheErr); }
+      catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard cadangan tidak dapat disimpan:', cacheErr); }
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
     })
     .withFailureHandler(function(err) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard.</td></tr>';
-      if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
-      alert('Gagal memuat Dashboard: ' + (err && err.message ? err.message : err));
+      if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Dashboard belum tersedia dari cache maupun server.</td></tr>';
+      if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Perbarui' : 'Tampilkan'; }
+      console.warn('[AS-Pos] Refresh Dashboard gagal; data cache dipertahankan:', err);
     })
     .getDashboardData(startStr, endStr, branchId);
 }
@@ -3387,6 +3408,8 @@ function simpanEditItemModal() {
     }
 
     function loadPenjualanPerBarang() {
+      var reportLoadToken = (Number(window.__asposReportLoadToken) || 0) + 1;
+      window.__asposReportLoadToken = reportLoadToken;
       var mode = document.getElementById("filterModeBarang").value;
       var start = document.getElementById("filterBarangStart").value;
       var end = document.getElementById("filterBarangEnd").value;
@@ -3555,11 +3578,17 @@ function simpanEditItemModal() {
         try {
           if (!(await asposEnsureIndexedDB())) return;
           var cacheRows = await getAllFromStore('reportCache'), cached = cacheRows.find(function(item) { return item && item.cacheKey === reportCacheKey; });
-          if (cached && Array.isArray(cached.rows)) renderAdvancedReport(cached.rows);
+          if (cached && Array.isArray(cached.rows) &&
+              window.__asposReportLoadToken === reportLoadToken &&
+              window.__asposReportServerToken !== reportLoadToken) {
+            renderAdvancedReport(cached.rows);
+          }
         } catch (e) { console.warn('[AS-Pos] Cache laporan per barang:', e); }
       })();
       asposCallGasLocalFirst('getLaporanPenjualanBarangAdvanced', [start, end, (mode === 'supplier' || mode === 'rekap') ? 'transaksi' : mode, branchId])
         .then(async function(resData) {
+          if (window.__asposReportLoadToken !== reportLoadToken) return;
+          window.__asposReportServerToken = reportLoadToken;
           var rows = Array.isArray(resData) ? resData.slice() : [];
           try {
             var headers = await asposCallGasLocalFirst('getPenjualan', [
