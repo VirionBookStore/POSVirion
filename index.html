@@ -6444,27 +6444,43 @@ function prosesCheckoutReturFinal() {
     window.loadPromoManajemen = asposLoadPromoLocalFirst;
 
     async function asposLoadStokMasukLocalFirst() {
+      var ready = false, local = [];
       try {
-        var result = await asposGetLocalOrServer('stokMasuk', 'getStokMasuk', []);
-        globalStokMasukData = result.data;
-        filterStokMasuk();
+        ready = await asposEnsureIndexedDB();
+        if (ready) local = await getAllFromStore('stokMasuk');
+      } catch (e) { console.warn('[AS-Pos] Cache stok masuk:', e); }
+      if (local.length) { globalStokMasukData = local; filterStokMasuk(); }
+      else { var tbody = document.querySelector('#tabelStokMasuk tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Memuat stok masuk…</td></tr>'; }
+      try {
+        var response = await asposCallGasLocalFirst('getStokMasuk', []);
+        var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
+        if (!server) throw new Error('Respons getStokMasuk bukan array data.');
+        if (ready) { try { await replaceStore('stokMasuk', server); } catch (e) { console.warn('[AS-Pos] Cache stok masuk gagal diperbarui:', e); } }
+        globalStokMasukData = server; filterStokMasuk();
       } catch (err) {
-        console.error('[AS-Pos] Stok masuk:', err);
-        var tbody = document.querySelector('#tabelStokMasuk tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Gagal memuat stok masuk. Periksa koneksi atau sinkronkan data.</td></tr>';
+        console.warn('[AS-Pos] Refresh stok masuk gagal; cache tetap digunakan:', err);
+        if (!local.length) { var errorBody = document.querySelector('#tabelStokMasuk tbody'); if (errorBody) errorBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Stok masuk tidak tersedia dari lokal maupun server.</td></tr>'; }
       }
     }
     window.loadStokMasuk = asposLoadStokMasukLocalFirst;
 
     async function asposLoadReturBarangLocalFirst() {
+      var ready = false, local = [];
       try {
-        var result = await asposGetLocalOrServer('returBarang', 'getReturBarang', []);
-        globalReturData = result.data;
-        renderTabelRetur(globalReturData);
+        ready = await asposEnsureIndexedDB();
+        if (ready) local = await getAllFromStore('returBarang');
+      } catch (e) { console.warn('[AS-Pos] Cache retur barang:', e); }
+      if (local.length) { globalReturData = local; renderTabelRetur(local); }
+      else { var tbody = document.querySelector('#tabelRetur tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Memuat retur barang…</td></tr>'; }
+      try {
+        var response = await asposCallGasLocalFirst('getReturBarang', []);
+        var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
+        if (!server) throw new Error('Respons getReturBarang bukan array data.');
+        if (ready) { try { await replaceStore('returBarang', server); } catch (e) { console.warn('[AS-Pos] Cache retur barang gagal diperbarui:', e); } }
+        globalReturData = server; renderTabelRetur(server);
       } catch (err) {
-        console.error('[AS-Pos] Retur barang:', err);
-        var tbody = document.querySelector('#tabelRetur tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Gagal memuat retur barang. Periksa koneksi atau sinkronkan data.</td></tr>';
+        console.warn('[AS-Pos] Refresh retur barang gagal; cache tetap digunakan:', err);
+        if (!local.length) { var errorBody = document.querySelector('#tabelRetur tbody'); if (errorBody) errorBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Retur barang tidak tersedia dari lokal maupun server.</td></tr>'; }
       }
     }
     window.loadReturBarang = asposLoadReturBarangLocalFirst;
