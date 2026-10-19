@@ -5229,7 +5229,7 @@ function prosesCheckoutReturFinal() {
     // ENGINE INDEXEDDB: LOCAL-FIRST ARCHITECTURE (ROBUST VERSION)
     // =========================================================================
     const dbName = "AS_POS_DB";
-    const dbVersion = 10;
+    const dbVersion = 11;
     let db = null;
     let dbFailed = false;
     let dbOpening = null;
@@ -5277,14 +5277,26 @@ function prosesCheckoutReturFinal() {
           const request = window.indexedDB.open(dbName, dbVersion);
           request.onupgradeneeded = function(event) {
             const database = event.target.result;
+            const upgradeTx = event.target.transaction;
+            const scopedStores = ['masterBarangByBranch','stokMasukByBranch','returBarangByBranch','riwayatPenjualanByBranch'];
             Object.entries(dbStores).forEach(function(entry) {
               const storeName = entry[0];
               const keyPath = entry[1];
+              let store;
               if (!database.objectStoreNames.contains(storeName)) {
-                const createdStore = database.createObjectStore(storeName, { keyPath: keyPath });
-                if (['masterBarangByBranch','stokMasukByBranch','returBarangByBranch','riwayatPenjualanByBranch'].includes(storeName)) {
-                  createdStore.createIndex('branchId', 'branchId', { unique: false });
-                  createdStore.createIndex('scopeKey', 'scopeKey', { unique: false });
+                store = database.createObjectStore(storeName, { keyPath: keyPath });
+              } else {
+                store = upgradeTx.objectStore(storeName);
+              }
+              // Pastikan index juga dibuat pada object store lama saat migrasi versi.
+              // Sebelumnya index hanya dibuat saat store baru dibuat, sehingga database
+              // perangkat lama bisa terus melakukan pembacaan cache cabang dengan scan penuh.
+              if (scopedStores.includes(storeName)) {
+                if (!store.indexNames.contains('branchId')) {
+                  store.createIndex('branchId', 'branchId', { unique: false });
+                }
+                if (!store.indexNames.contains('scopeKey')) {
+                  store.createIndex('scopeKey', 'scopeKey', { unique: false });
                 }
               }
             });
