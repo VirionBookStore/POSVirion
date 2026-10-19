@@ -41,7 +41,7 @@ jobs:
           if len(re.findall(r'<form\b', html, flags=re.IGNORECASE)) != len(re.findall(r'</form\s*>', html, flags=re.IGNORECASE)):
               print('HTML structural error: form tags are unbalanced.')
               sys.exit(1)
-          if not re.search(r'<input type="file"[^>]*id="fileInput"[^>]*accept="image/\\*"', html, flags=re.IGNORECASE):
+          if not re.search(r'<input type="file"[^>]*id="fileInput"[^>]*accept="image/\*"', html, flags=re.IGNORECASE):
               print('HTML structural error: product image upload input is incomplete.')
               sys.exit(1)
           scripts = re.findall(r'<script\b[^>]*>([\s\S]*?)</script\s*>', html, flags=re.IGNORECASE)
