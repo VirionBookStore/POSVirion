@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        webView.loadUrl("https://virionbookstore.github.io/POSVirion/");
+        webView.loadUrl("https://script.google.com/macros/s/AKfycbzRzls_1njFjey6d5t03XvQLILFmW7lYNQp47mBeDm50btXSeUJghzYxtNVDdwxQKI/exec");
     }
 
     @Override
