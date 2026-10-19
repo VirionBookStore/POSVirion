@@ -5229,12 +5229,13 @@ function prosesCheckoutReturFinal() {
     // ENGINE INDEXEDDB: LOCAL-FIRST ARCHITECTURE (ROBUST VERSION)
     // =========================================================================
     const dbName = "AS_POS_DB";
-    const dbVersion = 9;
+    const dbVersion = 10;
     let db = null;
     let dbFailed = false;
     let dbOpening = null;
     const dbStores = {
       'masterBarang': 'id_barang',
+      'masterBarangStaging': 'id_barang',
       'masterBarangByBranch': 'cacheKey',
       'stokMasukByBranch': 'cacheKey',
       'returBarangByBranch': 'cacheKey',
@@ -5965,10 +5966,15 @@ function prosesCheckoutReturFinal() {
           cabang:'Cabang'
         };
         try {
-          // 1) Master barang diambil per 1000 record agar aman untuk data besar.
+          // 1) Master barang diambil per 1000 record ke store staging.
+          // Data master lama tetap utuh sampai seluruh batch tervalidasi.
           if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil jumlah master barang dari Google Sheets...</b>';
           const totalBarang = Number(await gasCall('getBarangTotalCount', [])) || 0;
-          await clearStore('masterBarang');
+          const previousMasterCount = await getLocalStoreCount('masterBarang');
+          if (totalBarang === 0 && previousMasterCount > 0) {
+            throw new Error('Server melaporkan Master Barang kosong padahal perangkat memiliki '+previousMasterCount+' data. Data lokal dipertahankan; periksa deployment GAS sebelum mencoba sinkron ulang.');
+          }
+          await clearStore('masterBarangStaging');
           let receivedBarang = 0;
           let receivedUniqueBarang = 0;
           const seenBarangIds = new Set();
@@ -6035,7 +6041,7 @@ function prosesCheckoutReturFinal() {
               const normalizedItem = Object.assign({}, item, { id_barang: id });
               validBatch.push(normalizedItem);
             });
-            const saved = await putStoreBatch('masterBarang', validBatch);
+            const saved = await putStoreBatch('masterBarangStaging', validBatch);
             if (saved.skipped) throw new Error('Master Barang: '+saved.skipped+' record tidak memiliki ID Barang.');
             receivedBarang += batch.length;
             receivedUniqueBarang += saved.count;
@@ -6044,7 +6050,31 @@ function prosesCheckoutReturFinal() {
             if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron Master Barang...</b><br>'+receivedBarang.toLocaleString('id-ID')+' / '+totalBarang.toLocaleString('id-ID')+' record'+
               (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
           }
-          // 1b) Perbarui cache master bercakupan cabang tanpa mencampur stok antar-cabang.
+          // Promosikan staging secara atomik: jika transaksi IndexedDB gagal,
+          // database mengembalikan master lama secara utuh.
+          await new Promise(function(resolve, reject) {
+            let tx;
+            try {
+              tx = db.transaction(['masterBarang', 'masterBarangStaging'], 'readwrite');
+              const target = tx.objectStore('masterBarang');
+              const staging = tx.objectStore('masterBarangStaging');
+              const read = staging.getAll();
+              read.onsuccess = function() {
+                const stagedRows = read.result || [];
+                if (stagedRows.length !== receivedUniqueBarang) {
+                  try { tx.abort(); } catch (e) {}
+                  return;
+                }
+                target.clear();
+                stagedRows.forEach(function(row) { target.put(row); });
+                staging.clear();
+              };
+              read.onerror = function() { try { tx.abort(); } catch (e) {} };
+              tx.oncomplete = function() { resolve(true); };
+              tx.onerror = function() { reject(tx.error || new Error('Promosi Master Barang gagal.')); };
+              tx.onabort = function() { reject(tx.error || new Error('Promosi Master Barang dibatalkan; data master lama dipertahankan.')); };
+            } catch (e) { reject(e); }
+          });
           const syncedMasterRows = await getAllFromStore('masterBarang');
           const loggedBranchId = String((currentUser && !isOwner() && currentUser.id_cabang) || '').trim();
           if (loggedBranchId) {
