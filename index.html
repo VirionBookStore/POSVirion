@@ -5969,8 +5969,25 @@ function prosesCheckoutReturFinal() {
           // 1) Master barang diambil per 1000 record ke store staging.
           // Data master lama tetap utuh sampai seluruh batch tervalidasi.
           if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil jumlah master barang dari Google Sheets...</b>';
-          const totalBarang = Number(await gasCall('getBarangTotalCount', [])) || 0;
+          const batchSize = 1000;
+          const branchId = currentUser ? (isOwner() ? null : currentUser.id_cabang) : null;
+          let totalBarang = Number(await gasCall('getBarangTotalCount', [branchId])) || 0;
           const previousMasterCount = await getLocalStoreCount('masterBarang');
+          // Ambil batch pertama lebih dulu. Pada akun non-owner, total dari endpoint
+          // getBarangTotalCount bisa berupa total semua cabang, sedangkan batch sudah
+          // difilter ke cabang login. Jika API batch menyediakan total terfilter,
+          // gunakan angka tersebut agar loop tidak berhenti sebelum semua data cabang diterima.
+          let firstBatchResult = null;
+          if (totalBarang > 0) {
+            firstBatchResult = await gasCall('getBarangBatch', [0, batchSize, branchId]);
+            let batchTotal = null;
+            if (firstBatchResult && !Array.isArray(firstBatchResult) && Number.isFinite(Number(firstBatchResult.total))) {
+              batchTotal = Number(firstBatchResult.total);
+            } else if (firstBatchResult && firstBatchResult.data && Number.isFinite(Number(firstBatchResult.data.total))) {
+              batchTotal = Number(firstBatchResult.data.total);
+            }
+            if (batchTotal !== null && batchTotal >= 0) totalBarang = batchTotal;
+          }
           if (totalBarang === 0 && previousMasterCount > 0) {
             throw new Error('Server melaporkan Master Barang kosong padahal perangkat memiliki '+previousMasterCount+' data. Data lokal dipertahankan; periksa deployment GAS sebelum mencoba sinkron ulang.');
           }
@@ -5979,10 +5996,10 @@ function prosesCheckoutReturFinal() {
           let receivedUniqueBarang = 0;
           const seenBarangIds = new Set();
           let duplicateBarang = 0;
-          const batchSize = 1000;
           for (let offset = 0; offset < totalBarang; offset += batchSize) {
-            const branchId = currentUser ? (isOwner() ? null : currentUser.id_cabang) : null;
-            const batchResult = await gasCall('getBarangBatch', [offset, batchSize, branchId]);
+            const batchResult = offset === 0 && firstBatchResult
+              ? firstBatchResult
+              : await gasCall('getBarangBatch', [offset, batchSize, branchId]);
             // GAS dapat mengembalikan batch dalam beberapa bentuk:
             // 1) array langsung
             // 2) {data:[...]}
