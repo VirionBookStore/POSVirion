@@ -6044,16 +6044,78 @@ function prosesCheckoutReturFinal() {
             if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron Master Barang...</b><br>'+receivedBarang.toLocaleString('id-ID')+' / '+totalBarang.toLocaleString('id-ID')+' record'+
               (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
           }
+          // 1b) Perbarui cache master bercakupan cabang tanpa mencampur stok antar-cabang.
+          const syncedMasterRows = await getAllFromStore('masterBarang');
+          const loggedBranchId = String((currentUser && currentUser.id_cabang) || '').trim();
+          if (loggedBranchId) {
+            await asposSaveMasterForBranch(loggedBranchId, syncedMasterRows.filter(function(row) {
+              return String(row.id_cabang || loggedBranchId).trim() === loggedBranchId;
+            }));
+          } else {
+            await asposSaveMasterForBranch('__ALL__', syncedMasterRows);
+            const masterBranches = Array.from(new Set(syncedMasterRows.map(function(row) {
+              return String(row.id_cabang || '').trim();
+            }).filter(Boolean)));
+            for (const masterBranch of masterBranches) {
+              await asposSaveMasterForBranch(masterBranch, syncedMasterRows.filter(function(row) {
+                return String(row.id_cabang || '').trim() === masterBranch;
+              }));
+            }
+          }
           // 2) Data lain tetap satu kali panggil karena ukurannya jauh lebih kecil.
           for (let i=0; i<normalTasks.length; i++) {
             const storeName = normalTasks[i][0];
             const fnName = normalTasks[i][1];
             const fnArgs = normalTasks[i][2] || [];
             if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron '+storeLabels[storeName]+'...</b>';
-            const data = await gasCall(fnName, fnArgs);
+            let data = await gasCall(fnName, fnArgs);
             if (!Array.isArray(data)) throw new Error(storeLabels[storeName]+' dari GAS bukan array.');
+            // Jangan sampai refresh server menghapus transaksi lokal yang masih PENDING.
+            if (storeName === 'riwayatPenjualan') {
+              const previousHistory = await getAllFromStore('riwayatPenjualan');
+              const pendingRows = previousHistory.filter(function(row) {
+                return String(row && (row.sync_status || row.status) || '').toUpperCase() === 'PENDING';
+              });
+              const serverKeys = new Set(data.map(function(row) {
+                return String(row.id_cabang || '') + '::' + String(row.no_nota || '').trim();
+              }));
+              pendingRows.forEach(function(row) {
+                const key = String(row.id_cabang || '') + '::' + String(row.no_nota || '').trim();
+                if (key && !serverKeys.has(key)) data.push(row);
+              });
+            }
             const result = await replaceStore(storeName, data);
             if (result.skipped) throw new Error(storeLabels[storeName]+': '+result.skipped+' record tidak memiliki key yang valid.');
+            // Cache transaksi per cabang dan tampilan Semua Cabang disegarkan dari respons yang sama.
+            const scopedTarget = {
+              stokMasuk: 'stokMasukByBranch',
+              returBarang: 'returBarangByBranch',
+              riwayatPenjualan: 'riwayatPenjualanByBranch'
+            }[storeName];
+            if (scopedTarget) {
+              const existingScoped = await getAllFromStore(scopedTarget);
+              const scopes = new Set(['__ALL__']);
+              const currentBranch = String((currentUser && currentUser.id_cabang) || '').trim();
+              if (currentBranch) scopes.add(currentBranch);
+              existingScoped.forEach(function(row) {
+                const existingScope = String(row.scopeKey || '').trim();
+                const rowBranch = String(row.id_cabang || row.branchId || '').trim();
+                if (existingScope && existingScope !== '__ALL__') scopes.add(existingScope);
+                if (rowBranch) scopes.add(rowBranch);
+              });
+              data.forEach(function(row) {
+                const rowBranch = String(row.id_cabang || row.branchId || '').trim();
+                if (rowBranch) scopes.add(rowBranch);
+              });
+              const idField = storeName === 'stokMasuk' ? 'id_transaksi' :
+                (storeName === 'returBarang' ? 'id_retur' : 'no_nota');
+              for (const scopeKey of scopes) {
+                const scopedRows = scopeKey === '__ALL__' ? data : data.filter(function(row) {
+                  return String(row.id_cabang || row.branchId || '').trim() === scopeKey;
+                });
+                await asposReplaceScopedStore(scopedTarget, scopeKey, scopedRows, idField);
+              }
+            }
             const pct = 70 + Math.round((i+1) / normalTasks.length * 25);
             if (btn) btn.innerText = '⏳ '+Math.min(95,pct)+'%';
           }
