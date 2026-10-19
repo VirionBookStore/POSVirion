@@ -5438,13 +5438,10 @@ function prosesCheckoutReturFinal() {
     }
 
     // Cache scoped stores: keys include branch scope so equal IDs across branches cannot overwrite each other.
-    function asposGetDataScope() {
+    function asposGetDataScope(selectorId) {
       var userBranch = String((currentUser && currentUser.id_cabang) || '').trim();
-      var selectorIds = ['filterRiwayatCabang','filterMasukCabang','filterReturCabang'];
-      for (var i = 0; i < selectorIds.length; i++) {
-        var el = document.getElementById(selectorIds[i]);
-        if (el && el.style.display !== 'none' && String(el.value || '').trim()) return String(el.value).trim();
-      }
+      var el = selectorId ? document.getElementById(selectorId) : null;
+      if (el && el.style.display !== 'none' && String(el.value || '').trim()) return String(el.value).trim();
       return userBranch || (isOwner() ? '__ALL__' : '');
     }
     function asposReadScopedStore(storeName, scopeKey) {
@@ -6436,7 +6433,7 @@ function prosesCheckoutReturFinal() {
     }
     window.loadPromoManajemen = asposLoadPromoLocalFirst;
     async function asposLoadStokMasukLocalFirst() {
-      var ready = false, local = [], scope = asposGetDataScope();
+      var ready = false, local = [], scope = asposGetDataScope('filterMasukCabang');
       try {
         ready = await asposEnsureIndexedDB();
         if (ready) {
@@ -6454,7 +6451,7 @@ function prosesCheckoutReturFinal() {
         var response = await asposCallGasLocalFirst('getStokMasuk', []);
         var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
         if (!server) throw new Error('Respons getStokMasuk bukan array data.');
-        var selectedScope = asposGetDataScope();
+        var selectedScope = asposGetDataScope('filterMasukCabang');
         var scoped = selectedScope === '__ALL__' ? server : server.filter(function(row) { return String(row.id_cabang || '').trim() === selectedScope; });
         if (ready) { try { await asposReplaceScopedStore('stokMasukByBranch', selectedScope, scoped, 'id_transaksi'); } catch (e) { console.warn('[AS-Pos] Cache stok masuk gagal diperbarui:', e); } }
         globalStokMasukData = scoped; filterStokMasuk();
@@ -6466,7 +6463,7 @@ function prosesCheckoutReturFinal() {
     window.loadStokMasuk = asposLoadStokMasukLocalFirst;
 
     async function asposLoadReturBarangLocalFirst() {
-      var ready = false, local = [], scope = asposGetDataScope();
+      var ready = false, local = [], scope = asposGetDataScope('filterReturCabang');
       try {
         ready = await asposEnsureIndexedDB();
         if (ready) {
@@ -6484,7 +6481,7 @@ function prosesCheckoutReturFinal() {
         var response = await asposCallGasLocalFirst('getReturBarang', []);
         var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
         if (!server) throw new Error('Respons getReturBarang bukan array data.');
-        var selectedScope = asposGetDataScope();
+        var selectedScope = asposGetDataScope('filterReturCabang');
         var scoped = selectedScope === '__ALL__' ? server : server.filter(function(row) { return String(row.id_cabang || '').trim() === selectedScope; });
         if (ready) { try { await asposReplaceScopedStore('returBarangByBranch', selectedScope, scoped, 'id_retur'); } catch (e) { console.warn('[AS-Pos] Cache retur barang gagal diperbarui:', e); } }
         globalReturData = scoped; renderTabelRetur(scoped);
@@ -6532,7 +6529,7 @@ function prosesCheckoutReturFinal() {
       var start = document.getElementById('filterRiwayatStart'), end = document.getElementById('filterRiwayatEnd');
       if (start && !start.value) start.value = today;
       if (end && !end.value) end.value = today;
-      var scope = asposGetDataScope(), branchId = scope === '__ALL__' ? '' : scope, ready = false, localRows = [], legacyRows = [], pending = [];
+      var scope = asposGetDataScope('filterRiwayatCabang'), branchId = scope === '__ALL__' ? '' : scope, ready = false, localRows = [], legacyRows = [], pending = [];
       try {
         ready = await asposEnsureIndexedDB();
         if (ready) {
