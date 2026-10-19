@@ -3330,35 +3330,46 @@ function simpanEditItemModal() {
       wrapperSup.style.display = (mode === 'supplier') ? "block" : "none";
       wrapperKasir.style.display = (mode === 'kasir') ? "block" : "none";
 
-      // Supplier sebelumnya hanya dimuat saat menu Supplier dibuka.
-      // Muat langsung dari GAS saat filter Supplier dipilih agar dropdown tidak kosong.
-      if (mode === 'supplier' && selectSupplier && !selectSupplier.dataset.loaded && !selectSupplier.dataset.loading) {
+      // Supplier laporan: render cache IndexedDB lebih dahulu, lalu segarkan dari server.
+      if (mode === 'supplier' && selectSupplier && !selectSupplier.dataset.loading) {
         selectSupplier.dataset.loading = '1';
         selectSupplier.disabled = true;
-        selectSupplier.innerHTML = '<option value="">Memuat daftar supplier...</option>';
-        google.script.run
-          .withSuccessHandler(function(data) {
-            var rows = Array.isArray(data) ? data : [];
-            globalDataSupplier = rows;
-            selectSupplier.innerHTML = '<option value="">-- Semua Supplier --</option>';
-            rows.forEach(function(s) {
-              var opt = document.createElement('option');
-              opt.value = String(s.id_supplier || '') + '|||' + String(s.nama_supplier || '');
-              opt.textContent = String(s.nama_supplier || s.id_supplier || 'Supplier') +
-                (s.id_supplier ? ' (' + s.id_supplier + ')' : '');
-              selectSupplier.appendChild(opt);
-            });
-            selectSupplier.dataset.loaded = '1';
+        function renderSupplierOptions(rows) {
+          rows = Array.isArray(rows) ? rows : [];
+          globalDataSupplier = rows;
+          selectSupplier.innerHTML = '<option value="">-- Semua Supplier --</option>';
+          rows.forEach(function(s) {
+            var opt = document.createElement('option');
+            opt.value = String(s.id_supplier || '') + '|||' + String(s.nama_supplier || '');
+            opt.textContent = String(s.nama_supplier || s.id_supplier || 'Supplier') +
+              (s.id_supplier ? ' (' + s.id_supplier + ')' : '');
+            selectSupplier.appendChild(opt);
+          });
+          selectSupplier.dataset.loaded = '1';
+        }
+        (async function() {
+          var local = [];
+          try { if (await asposEnsureIndexedDB()) local = await getAllFromStore('supplier'); } catch (e) {
+            console.warn('[AS-Pos] Cache supplier laporan tidak tersedia:', e);
+          }
+          if (local.length) renderSupplierOptions(local);
+          else selectSupplier.innerHTML = '<option value="">Memuat daftar supplier...</option>';
+          try {
+            var response = await asposCallGasLocalFirst('getSupplier', []);
+            var rows = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
+            if (!rows) throw new Error('Respons getSupplier bukan array data.');
+            try { if (await asposEnsureIndexedDB()) await replaceStore('supplier', rows); } catch (e) {
+              console.warn('[AS-Pos] Cache supplier laporan gagal diperbarui:', e);
+            }
+            renderSupplierOptions(rows);
+          } catch (err) {
+            console.warn('[AS-Pos] Penyegaran supplier laporan gagal:', err);
+            if (!local.length) selectSupplier.innerHTML = '<option value="">Supplier tidak tersedia secara lokal/server</option>';
+          } finally {
             selectSupplier.dataset.loading = '';
             selectSupplier.disabled = false;
-          })
-          .withFailureHandler(function(err) {
-            selectSupplier.dataset.loading = '';
-            selectSupplier.disabled = false;
-            selectSupplier.innerHTML = '<option value="">Gagal memuat supplier — pilih ulang filter</option>';
-            console.error('[AS-Pos] gagal memuat daftar supplier untuk laporan', err);
-          })
-          .getSupplier();
+          }
+        })();
       }
 
       if (mode === 'kasir') {
