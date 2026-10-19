@@ -5189,13 +5189,16 @@ function prosesCheckoutReturFinal() {
     // ENGINE INDEXEDDB: LOCAL-FIRST ARCHITECTURE (ROBUST VERSION)
     // =========================================================================
     const dbName = "AS_POS_DB";
-    const dbVersion = 8;
+    const dbVersion = 9;
     let db = null;
     let dbFailed = false;
     let dbOpening = null;
     const dbStores = {
       'masterBarang': 'id_barang',
       'masterBarangByBranch': 'cacheKey',
+      'stokMasukByBranch': 'cacheKey',
+      'returBarangByBranch': 'cacheKey',
+      'riwayatPenjualanByBranch': 'cacheKey',
       'reportCache': 'cacheKey',
       'supplier': 'id_supplier',
       'promo': 'id_barang',
@@ -5238,7 +5241,10 @@ function prosesCheckoutReturFinal() {
               const keyPath = entry[1];
               if (!database.objectStoreNames.contains(storeName)) {
                 const createdStore = database.createObjectStore(storeName, { keyPath: keyPath });
-                if (storeName === 'masterBarangByBranch') createdStore.createIndex('branchId', 'branchId', { unique: false });
+                if (['masterBarangByBranch','stokMasukByBranch','returBarangByBranch','riwayatPenjualanByBranch'].includes(storeName)) {
+                  createdStore.createIndex('branchId', 'branchId', { unique: false });
+                  createdStore.createIndex('scopeKey', 'scopeKey', { unique: false });
+                }
               }
             });
           };
@@ -5430,6 +5436,58 @@ function prosesCheckoutReturFinal() {
         } catch (err) { reject(err); }
       });
     }
+
+    // Cache scoped stores: keys include branch scope so equal IDs across branches cannot overwrite each other.
+    function asposGetDataScope() {
+      var userBranch = String((currentUser && currentUser.id_cabang) || '').trim();
+      var selectorIds = ['filterRiwayatCabang','filterMasukCabang','filterReturCabang'];
+      for (var i = 0; i < selectorIds.length; i++) {
+        var el = document.getElementById(selectorIds[i]);
+        if (el && el.style.display !== 'none' && String(el.value || '').trim()) return String(el.value).trim();
+      }
+      return userBranch || (isOwner() ? '__ALL__' : '');
+    }
+    function asposReadScopedStore(storeName, scopeKey) {
+      return new Promise(function(resolve, reject) {
+        if (!db) return reject(new Error('Database lokal belum terbuka.'));
+        var scope = String(scopeKey || '').trim();
+        try {
+          var tx = db.transaction(storeName, 'readonly'), store = tx.objectStore(storeName);
+          var req = store.indexNames.contains('scopeKey') ? store.index('scopeKey').getAll(IDBKeyRange.only(scope)) : store.getAll();
+          req.onsuccess = function() { resolve((req.result || []).filter(function(row) { return String(row.scopeKey || '') === scope; }).map(function(row) { var clean = Object.assign({}, row); delete clean.cacheKey; delete clean.scopeKey; return clean; })); };
+          req.onerror = function() { reject(req.error || new Error('Gagal membaca '+storeName)); };
+          tx.onerror = function() { reject(tx.error || new Error('Transaksi baca '+storeName+' gagal')); };
+        } catch (e) { reject(e); }
+      });
+    }
+    function asposReplaceScopedStore(storeName, scopeKey, rows, idField) {
+      return new Promise(function(resolve, reject) {
+        if (!db) return reject(new Error('Database lokal belum terbuka.'));
+        var scope = String(scopeKey || '').trim(), source = Array.isArray(rows) ? rows : [];
+        try {
+          var tx = db.transaction(storeName, 'readwrite'), store = tx.objectStore(storeName);
+          var idx = store.indexNames.contains('scopeKey') ? store.index('scopeKey') : null;
+          var req = idx ? idx.openCursor(IDBKeyRange.only(scope)) : store.openCursor();
+          var written = 0;
+          req.onsuccess = function(event) {
+            var cursor = event.target.result;
+            if (cursor) { if (!idx || String(cursor.value.scopeKey || '') === scope) cursor.delete(); cursor.continue(); return; }
+            source.forEach(function(row, index) {
+              if (!row || typeof row !== 'object') return;
+              var id = String(row[idField] || row.no_nota || row.id_transaksi || row.id_retur || index).trim();
+              var rowBranch = String(row.id_cabang || row.branchId || '').trim();
+              var unique = scope + '::' + (rowBranch || 'NA') + '::' + id;
+              var record = Object.assign({}, row, {cacheKey: unique, scopeKey: scope, branchId: rowBranch});
+              store.put(record); written++;
+            });
+          };
+          tx.oncomplete = function() { resolve({count:written,scopeKey:scope}); };
+          tx.onerror = function() { reject(tx.error || new Error('Gagal menyimpan '+storeName)); };
+          tx.onabort = function() { reject(tx.error || new Error('Penyimpanan '+storeName+' dibatalkan')); };
+        } catch (e) { reject(e); }
+      });
+    }
+
     function updateLocalStockAfterTransaction(items, transactionBranchId) {
       const branchId = String(transactionBranchId || '').trim(), cachedBranchId = String(localStorage.getItem('aspos_master_branch') || '').trim();
       const selectedBranch = document.getElementById('posPilihCabang');
@@ -6378,19 +6436,28 @@ function prosesCheckoutReturFinal() {
     }
     window.loadPromoManajemen = asposLoadPromoLocalFirst;
     async function asposLoadStokMasukLocalFirst() {
-      var ready = false, local = [];
+      var ready = false, local = [], scope = asposGetDataScope();
       try {
         ready = await asposEnsureIndexedDB();
-        if (ready) local = await getAllFromStore('stokMasuk');
-      } catch (e) { console.warn('[AS-Pos] Cache stok masuk:', e); }
+        if (ready) {
+          local = await asposReadScopedStore('stokMasukByBranch', scope);
+          if (!local.length && scope !== '__ALL__') {
+            var legacy = await getAllFromStore('stokMasuk');
+            local = legacy.filter(function(row) { return String(row.id_cabang || '') === scope; });
+            if (local.length) await asposReplaceScopedStore('stokMasukByBranch', scope, local, 'id_transaksi');
+          }
+        }
+      } catch (e) { console.warn('[AS-Pos] Cache stok masuk per cabang:', e); }
       if (local.length) { globalStokMasukData = local; filterStokMasuk(); }
       else { var tbody = document.querySelector('#tabelStokMasuk tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Memuat stok masuk…</td></tr>'; }
       try {
         var response = await asposCallGasLocalFirst('getStokMasuk', []);
         var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
         if (!server) throw new Error('Respons getStokMasuk bukan array data.');
-        if (ready) { try { await replaceStore('stokMasuk', server); } catch (e) { console.warn('[AS-Pos] Cache stok masuk gagal diperbarui:', e); } }
-        globalStokMasukData = server; filterStokMasuk();
+        var selectedScope = asposGetDataScope();
+        var scoped = selectedScope === '__ALL__' ? server : server.filter(function(row) { return String(row.id_cabang || '').trim() === selectedScope; });
+        if (ready) { try { await asposReplaceScopedStore('stokMasukByBranch', selectedScope, scoped, 'id_transaksi'); } catch (e) { console.warn('[AS-Pos] Cache stok masuk gagal diperbarui:', e); } }
+        globalStokMasukData = scoped; filterStokMasuk();
       } catch (err) {
         console.warn('[AS-Pos] Refresh stok masuk gagal; cache tetap digunakan:', err);
         if (!local.length) { var errorBody = document.querySelector('#tabelStokMasuk tbody'); if (errorBody) errorBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Stok masuk tidak tersedia dari lokal maupun server.</td></tr>'; }
@@ -6399,19 +6466,28 @@ function prosesCheckoutReturFinal() {
     window.loadStokMasuk = asposLoadStokMasukLocalFirst;
 
     async function asposLoadReturBarangLocalFirst() {
-      var ready = false, local = [];
+      var ready = false, local = [], scope = asposGetDataScope();
       try {
         ready = await asposEnsureIndexedDB();
-        if (ready) local = await getAllFromStore('returBarang');
-      } catch (e) { console.warn('[AS-Pos] Cache retur barang:', e); }
+        if (ready) {
+          local = await asposReadScopedStore('returBarangByBranch', scope);
+          if (!local.length && scope !== '__ALL__') {
+            var legacy = await getAllFromStore('returBarang');
+            local = legacy.filter(function(row) { return String(row.id_cabang || '') === scope; });
+            if (local.length) await asposReplaceScopedStore('returBarangByBranch', scope, local, 'id_retur');
+          }
+        }
+      } catch (e) { console.warn('[AS-Pos] Cache retur barang per cabang:', e); }
       if (local.length) { globalReturData = local; renderTabelRetur(local); }
       else { var tbody = document.querySelector('#tabelRetur tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Memuat retur barang…</td></tr>'; }
       try {
         var response = await asposCallGasLocalFirst('getReturBarang', []);
         var server = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
         if (!server) throw new Error('Respons getReturBarang bukan array data.');
-        if (ready) { try { await replaceStore('returBarang', server); } catch (e) { console.warn('[AS-Pos] Cache retur barang gagal diperbarui:', e); } }
-        globalReturData = server; renderTabelRetur(server);
+        var selectedScope = asposGetDataScope();
+        var scoped = selectedScope === '__ALL__' ? server : server.filter(function(row) { return String(row.id_cabang || '').trim() === selectedScope; });
+        if (ready) { try { await asposReplaceScopedStore('returBarangByBranch', selectedScope, scoped, 'id_retur'); } catch (e) { console.warn('[AS-Pos] Cache retur barang gagal diperbarui:', e); } }
+        globalReturData = scoped; renderTabelRetur(scoped);
       } catch (err) {
         console.warn('[AS-Pos] Refresh retur barang gagal; cache tetap digunakan:', err);
         if (!local.length) { var errorBody = document.querySelector('#tabelRetur tbody'); if (errorBody) errorBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#dc3545;">Retur barang tidak tersedia dari lokal maupun server.</td></tr>'; }
@@ -6456,24 +6532,40 @@ function prosesCheckoutReturFinal() {
       var start = document.getElementById('filterRiwayatStart'), end = document.getElementById('filterRiwayatEnd');
       if (start && !start.value) start.value = today;
       if (end && !end.value) end.value = today;
-      var branchId = String((currentUser && currentUser.id_cabang) || '').trim(), ready = false, localRows = [], cachedBranchRows = [], pending = [];
-      try { ready = await asposEnsureIndexedDB(); if (ready) localRows = await getAllFromStore('riwayatPenjualan'); } catch (e) { console.warn('[AS-Pos] Cache riwayat:', e); }
-      cachedBranchRows = (localRows || []).map(asposNormalizeRiwayatRow).filter(function(r) { return !branchId || String(r.id_cabang || '').trim() === branchId; });
-      pending = cachedBranchRows.filter(function(r) { return String(r.sync_status || r.status || '').toUpperCase() === 'PENDING'; });
+      var scope = asposGetDataScope(), branchId = scope === '__ALL__' ? '' : scope, ready = false, localRows = [], legacyRows = [], pending = [];
+      try {
+        ready = await asposEnsureIndexedDB();
+        if (ready) {
+          localRows = await asposReadScopedStore('riwayatPenjualanByBranch', scope);
+          legacyRows = await getAllFromStore('riwayatPenjualan');
+          pending = legacyRows.map(asposNormalizeRiwayatRow).filter(function(r) { return String(r.sync_status || r.status || '').toUpperCase() === 'PENDING' && (scope === '__ALL__' || String(r.id_cabang || '').trim() === branchId); });
+          if (!localRows.length && scope !== '__ALL__') {
+            var migrated = legacyRows.map(asposNormalizeRiwayatRow).filter(function(r) { return String(r.id_cabang || '').trim() === branchId; });
+            if (migrated.length) { localRows = migrated; await asposReplaceScopedStore('riwayatPenjualanByBranch', scope, migrated, 'no_nota'); }
+          }
+        }
+      } catch (e) { console.warn('[AS-Pos] Cache riwayat per cabang:', e); }
+      var cachedBranchRows = (localRows || []).map(asposNormalizeRiwayatRow).filter(function(r) { return scope === '__ALL__' || String(r.id_cabang || '').trim() === branchId; });
+      var byNota = new Map();
+      cachedBranchRows.concat(pending).forEach(function(row) { var k = String(row.no_nota || '').trim(); if (k) byNota.set(String(row.id_cabang || '') + '::' + k, row); });
+      cachedBranchRows = Array.from(byNota.values());
       globalRiwayatData = cachedBranchRows;
       if (cachedBranchRows.length) filterRiwayatTransaksi();
       else { var initial = document.querySelector('#tabelRiwayat tbody'); if (initial) initial.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;">Memuat riwayat penjualan…</td></tr>'; }
       try {
-        var response = await asposCallGasLocalFirst('getPenjualan', [currentUser ? currentUser.id_cabang : '', currentUser ? currentUser.role : '']);
+        var response = await asposCallGasLocalFirst('getPenjualan', [branchId, currentUser ? currentUser.role : '']);
         var serverRows = Array.isArray(response) ? response : (response && Array.isArray(response.data) ? response.data : (response && Array.isArray(response.items) ? response.items : null));
         if (!serverRows) throw new Error('Respons getPenjualan bukan array data.');
-        var normalized = serverRows.map(asposNormalizeRiwayatRow).filter(function(r) { return !branchId || String(r.id_cabang || '').trim() === branchId; });
-        var keys = new Set(normalized.map(function(r) { return String(r.no_nota || '').trim(); }).filter(Boolean));
-        var extra = pending.filter(function(r) { var key = String(r.server_no_nota || r.no_nota || '').trim(); return key && !keys.has(key); });
+        var normalized = serverRows.map(asposNormalizeRiwayatRow).filter(function(r) { return scope === '__ALL__' || String(r.id_cabang || '').trim() === branchId; });
+        var keys = new Set(normalized.map(function(r) { return String(r.id_cabang || '') + '::' + String(r.no_nota || '').trim(); }).filter(Boolean));
+        var extra = pending.filter(function(r) { var key = String(r.id_cabang || '') + '::' + String(r.server_no_nota || r.no_nota || '').trim(); return key && !keys.has(key); });
         globalRiwayatData = normalized.concat(extra);
-        if (ready) { try { await replaceStore('riwayatPenjualan', globalRiwayatData); } catch (e) { console.warn('[AS-Pos] Cache riwayat gagal diperbarui:', e); } }
+        if (ready) { try { await asposReplaceScopedStore('riwayatPenjualanByBranch', scope, globalRiwayatData, 'no_nota'); } catch (e) { console.warn('[AS-Pos] Cache riwayat per cabang gagal diperbarui:', e); } }
         filterRiwayatTransaksi();
-      } catch (err) { console.warn('[AS-Pos] Refresh riwayat gagal; cache lokal tetap digunakan:', err); if (!cachedBranchRows.length) { var body = document.querySelector('#tabelRiwayat tbody'); if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;">Riwayat tidak tersedia dari lokal dan server.</td></tr>'; } }
+      } catch (err) {
+        console.warn('[AS-Pos] Refresh riwayat gagal; cache lokal dan transaksi PENDING tetap digunakan:', err);
+        if (!cachedBranchRows.length) { var body = document.querySelector('#tabelRiwayat tbody'); if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;">Riwayat tidak tersedia dari lokal dan server tidak dapat dihubungi.</td></tr>'; }
+      }
     }
     window.loadRiwayat = asposLoadRiwayatLocalFirst;
     function asposRenderCabangLocal(data) {
