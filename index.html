@@ -5952,7 +5952,7 @@ function prosesCheckoutReturFinal() {
           ['promo','getPromoList', []],
           ['stokMasuk','getStokMasuk', []],
           ['returBarang','getReturBarang', []],
-          ['riwayatPenjualan','getPenjualan', [currentUser ? currentUser.id_cabang : '', currentUser ? currentUser.role : '']],
+          ['riwayatPenjualan','getPenjualan', [currentUser ? (isOwner() ? '' : currentUser.id_cabang) : '', currentUser ? currentUser.role : '']],
           ['cabang','getCabang', []]
         ];
         const storeLabels = {
@@ -5975,7 +5975,7 @@ function prosesCheckoutReturFinal() {
           let duplicateBarang = 0;
           const batchSize = 1000;
           for (let offset = 0; offset < totalBarang; offset += batchSize) {
-            const branchId = currentUser ? currentUser.id_cabang : null;
+            const branchId = currentUser ? (isOwner() ? null : currentUser.id_cabang) : null;
             const batchResult = await gasCall('getBarangBatch', [offset, batchSize, branchId]);
             // GAS dapat mengembalikan batch dalam beberapa bentuk:
             // 1) array langsung
@@ -6046,7 +6046,7 @@ function prosesCheckoutReturFinal() {
           }
           // 1b) Perbarui cache master bercakupan cabang tanpa mencampur stok antar-cabang.
           const syncedMasterRows = await getAllFromStore('masterBarang');
-          const loggedBranchId = String((currentUser && currentUser.id_cabang) || '').trim();
+          const loggedBranchId = String((currentUser && !isOwner() && currentUser.id_cabang) || '').trim();
           if (loggedBranchId) {
             await asposSaveMasterForBranch(loggedBranchId, syncedMasterRows.filter(function(row) {
               return String(row.id_cabang || loggedBranchId).trim() === loggedBranchId;
@@ -6095,7 +6095,7 @@ function prosesCheckoutReturFinal() {
             if (scopedTarget) {
               const existingScoped = await getAllFromStore(scopedTarget);
               const scopes = new Set(['__ALL__']);
-              const currentBranch = String((currentUser && currentUser.id_cabang) || '').trim();
+              const currentBranch = String((currentUser && !isOwner() && currentUser.id_cabang) || '').trim();
               if (currentBranch) scopes.add(currentBranch);
               existingScoped.forEach(function(row) {
                 const existingScope = String(row.scopeKey || '').trim();
