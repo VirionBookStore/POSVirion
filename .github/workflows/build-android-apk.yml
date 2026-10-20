@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'index.html'
       - '.github/workflows/build-android-apk.yml'
 
 permissions:
@@ -29,6 +30,36 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Validate inline JavaScript
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, subprocess, sys
+          html = pathlib.Path('index.html').read_text(encoding='utf-8')
+          if len(re.findall(r'<script\b', html, flags=re.IGNORECASE)) != len(re.findall(r'</script\s*>', html, flags=re.IGNORECASE)):
+              print('HTML structural error: script tags are unbalanced.')
+              sys.exit(1)
+          if len(re.findall(r'<form\b', html, flags=re.IGNORECASE)) != len(re.findall(r'</form\s*>', html, flags=re.IGNORECASE)):
+              print('HTML structural error: form tags are unbalanced.')
+              sys.exit(1)
+          if not re.search(r'<input type="file"[^>]*id="fileInput"[^>]*accept="image/\*"', html, flags=re.IGNORECASE):
+              print('HTML structural error: product image upload input is incomplete.')
+              sys.exit(1)
+          scripts = re.findall(r'<script\b[^>]*>([\s\S]*?)</script\s*>', html, flags=re.IGNORECASE)
+          inline_scripts = [script for script in scripts if script.strip()]
+          if not inline_scripts:
+              print('No inline JavaScript blocks found.')
+              sys.exit(1)
+          for number, script in enumerate(inline_scripts, start=1):
+              path = pathlib.Path(f'/tmp/posvirion-inline-{number}.js')
+              path.write_text(script, encoding='utf-8')
+              result = subprocess.run(['node', '--check', str(path)], capture_output=True, text=True)
+              if result.returncode:
+                  print(f'JavaScript syntax error in inline script #{number}:')
+                  print(result.stdout)
+                  print(result.stderr)
+                  sys.exit(result.returncode)
+          print(f'Validated syntax for {len(inline_scripts)} inline JavaScript block(s).')
+          PY
       - name: Build debug APK
         working-directory: android
         run: gradle assembleDebug

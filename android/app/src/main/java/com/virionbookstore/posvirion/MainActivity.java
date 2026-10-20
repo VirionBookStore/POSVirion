@@ -3,8 +3,10 @@ package com.virionbookstore.posvirion;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowInsets;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -21,7 +23,27 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
+        webView.setBackgroundColor(Color.WHITE);
         setContentView(webView);
+
+        // Android 15+ enforces edge-to-edge for apps targeting SDK 35.
+        // Apply system-bar insets so the POS header and bottom controls do not
+        // sit underneath the status/navigation bars on newer Android devices.
+        webView.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                top = bars.top;
+                bottom = bars.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
         webView.getSettings().setDatabaseEnabled(true);
@@ -48,7 +70,7 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        webView.loadUrl("https://virionbookstore.github.io/POSVirion/");
+        webView.loadUrl("https://script.google.com/macros/s/AKfycbzRzls_1njFjey6d5t03XvQLILFmW7lYNQp47mBeDm50btXSeUJghzYxtNVDdwxQKI/exec");
     }
 
     @Override
