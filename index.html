@@ -5538,6 +5538,30 @@ function prosesCheckoutReturFinal() {
       });
     }
 
+    // Upsert satu baris cache riwayat tanpa mengganti seluruh scope.
+    // cacheKey mencakup scope + cabang + nomor nota, jadi nota sama di cabang lain tidak saling menimpa.
+    function asposUpsertScopedRow(storeName, scopeKey, row, idField, oldId) {
+      return new Promise(function(resolve, reject) {
+        if (!db) return reject(new Error('Database lokal belum terbuka.'));
+        var scope = String(scopeKey || '').trim();
+        var branchId = String((row && (row.id_cabang || row.branchId)) || '').trim();
+        var id = String((row && (row[idField] || row.no_nota || row.id_transaksi || row.id_retur)) || '').trim();
+        if (!scope || !id) return reject(new Error('Scope atau ID riwayat kosong.'));
+        var cacheKey = scope + '::' + (branchId || 'NA') + '::' + id;
+        var oldKey = oldId ? scope + '::' + (branchId || 'NA') + '::' + String(oldId).trim() : '';
+        try {
+          var tx = db.transaction(storeName, 'readwrite');
+          var store = tx.objectStore(storeName);
+          if (oldKey && oldKey !== cacheKey) store.delete(oldKey);
+          var record = Object.assign({}, row, {cacheKey:cacheKey, scopeKey:scope, branchId:branchId});
+          store.put(record);
+          tx.oncomplete = function() { resolve(record); };
+          tx.onerror = function() { reject(tx.error || new Error('Gagal memperbarui '+storeName)); };
+          tx.onabort = function() { reject(tx.error || new Error('Pembaruan '+storeName+' dibatalkan')); };
+        } catch (e) { reject(e); }
+      });
+    }
+
     function updateLocalStockAfterTransaction(items, transactionBranchId) {
       const branchId = String(transactionBranchId || '').trim(), cachedBranchId = String(localStorage.getItem('aspos_master_branch') || '').trim();
       const selectedBranch = document.getElementById('posPilihCabang');
@@ -5596,6 +5620,17 @@ function prosesCheckoutReturFinal() {
         tanggal: (displayData && displayData.tanggal) || new Date().toLocaleString('id-ID')
       });
       await putStore('riwayatPenjualan', localHistory);
+      // Simpan nota pending ke cache cabang dan cache Owner. Store lama tetap memakai
+      // LOCAL-... sebagai primary key agar nota server yang sama di cabang lain aman.
+      try {
+        const localBranchId = String(localHistory.id_cabang || '').trim();
+        if (localBranchId) {
+          await asposUpsertScopedRow('riwayatPenjualanByBranch', localBranchId, localHistory, 'no_nota');
+          await asposUpsertScopedRow('riwayatPenjualanByBranch', '__ALL__', localHistory, 'no_nota');
+        }
+      } catch (cacheErr) {
+        console.warn('[AS-Pos] Gagal menulis riwayat pending ke cache cabang; antrean lokal tetap tersimpan:', cacheErr);
+      }
 
       // Kurangi stok lokal segera. Google Sheets baru diperbarui saat berhasil upload.
       await updateLocalStockAfterTransaction(payload.items || [], payload.id_cabang);
@@ -5626,11 +5661,28 @@ function prosesCheckoutReturFinal() {
 
         const history = await getStoreItem('riwayatPenjualan', item.no_nota);
         if (history) {
-          history.no_nota = serverNota;
+          // Pertahankan LOCAL-... sebagai kunci di store legacy yang keyPath-nya no_nota.
+          // Nomor nota server hanya disimpan sebagai server_no_nota di store ini agar
+          // nota yang sama dari cabang lain tidak menimpa baris lokal.
           history.sync_status = 'SYNCED';
           history.server_no_nota = serverNota;
-          await deleteStoreItem('riwayatPenjualan', item.no_nota);
           await putStore('riwayatPenjualan', history);
+          try {
+            const branchId = String(history.id_cabang || payload.id_cabang || '').trim();
+            const syncedHistory = Object.assign({}, history, {
+              no_nota: serverNota,
+              server_no_nota: serverNota,
+              sync_status: 'SYNCED'
+            });
+            if (branchId) {
+              await asposUpsertScopedRow('riwayatPenjualanByBranch', branchId, syncedHistory, 'no_nota', item.no_nota);
+              await asposUpsertScopedRow('riwayatPenjualanByBranch', '__ALL__', syncedHistory, 'no_nota', item.no_nota);
+            }
+          } catch (cacheErr) {
+            // Transaksi server sudah berhasil dan outbox sudah selesai. Jangan masukkan
+            // ulang ke antrean hanya karena cache riwayat gagal diperbarui.
+            console.warn('[AS-Pos] Transaksi sudah tersinkron, tetapi cache riwayat perlu refresh:', cacheErr);
+          }
         }
         return true;
       } catch(err) {
@@ -6079,9 +6131,10 @@ function prosesCheckoutReturFinal() {
             if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron Master Barang...</b><br>'+receivedBarang.toLocaleString('id-ID')+' / '+totalBarang.toLocaleString('id-ID')+' record'+
               (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
           }
-          if (receivedBarang < totalBarang) {
-            throw new Error('Sinkronisasi Master Barang belum lengkap: server melaporkan '+totalBarang+
-              ' baris, tetapi baru '+receivedBarang+' baris diterima. Master lokal lama dipertahankan.');
+          if (receivedBarang !== totalBarang || receivedUniqueBarang !== totalBarang) {
+            throw new Error('Sinkronisasi Master Barang belum lengkap/valid: server melaporkan '+totalBarang+
+              ' baris, diterima '+receivedBarang+' baris dengan '+receivedUniqueBarang+
+              ' ID unik. Master lokal lama dipertahankan.');
           }
           // Promosikan staging secara atomik: jika transaksi IndexedDB gagal,
           // database mengembalikan master lama secara utuh.
