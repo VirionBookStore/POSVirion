@@ -50,10 +50,33 @@
   display: flex; overflow-x: auto; padding: 10px 15px; gap: 8px; white-space: nowrap; border-bottom: 1px solid #f1f3f5; scrollbar-width: none;
 }
 .pos-category-wrapper::-webkit-scrollbar { display: none; }
-.cat-chip {
-  padding: 6px 14px; border: 1px solid var(--primary-color); border-radius: 20px; font-size: 12px; color: var(--primary-color); background: white; cursor: pointer; font-weight: 500;
+/* Filter supplier POS: teks tanpa outline/kotak, warna aktif tetap dipertahankan */
+#posCategoryWrapper .cat-chip,
+#posCategoryWrapper .cat-chip:hover,
+#posCategoryWrapper .cat-chip:focus,
+#posCategoryWrapper .cat-chip:active {
+  padding: 8px 12px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  color: var(--primary-color);
+  background: #fff;
+  cursor: pointer;
+  font-weight: 500;
 }
-.cat-chip.active { background: #d1e7dd; border-color: var(--primary-color); color: var(--primary-color); font-weight: bold; }
+#posCategoryWrapper .cat-chip.active,
+#posCategoryWrapper .cat-chip.active:hover,
+#posCategoryWrapper .cat-chip.active:focus {
+  background: #d1e7dd !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  color: var(--primary-color);
+  font-weight: bold;
+}
 .pos-product-list {
   flex: 1; overflow-y: auto; padding: 0; background: #fff; padding-bottom: 15px; /* Kurangi padding karena tombol tidak lagi absolute */
 }
