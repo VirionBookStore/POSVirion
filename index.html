@@ -51,9 +51,25 @@
 }
 .pos-category-wrapper::-webkit-scrollbar { display: none; }
 .cat-chip {
-  padding: 6px 14px; border: 1px solid var(--primary-color); border-radius: 20px; font-size: 12px; color: var(--primary-color); background: white; cursor: pointer; font-weight: 500;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 0;
+  font-size: 12px;
+  color: var(--primary-color);
+  background: white;
+  cursor: pointer;
+  font-weight: 500;
+  box-shadow: none;
+  outline: none;
 }
-.cat-chip.active { background: #d1e7dd; border-color: var(--primary-color); color: var(--primary-color); font-weight: bold; }
+.cat-chip.active {
+  background: #d1e7dd;
+  border: none;
+  border-radius: 0;
+  color: var(--primary-color);
+  font-weight: bold;
+  box-shadow: none;
+}
 .pos-product-list {
   flex: 1; overflow-y: auto; padding: 0; background: #fff; padding-bottom: 15px; /* Kurangi padding karena tombol tidak lagi absolute */
 }
