@@ -345,7 +345,7 @@
   
 /* ===== Header POS modern hijau Virion ===== */
 .header-container {
-  background:#176b50;
+  background:#00a65a;
   color:#fff;
   padding:12px 22px;
   border:0;
@@ -382,10 +382,10 @@
 .user-info { min-width:0; text-align:left; }
 .user-name { color:#fff; font-size:16px; font-weight:700; margin:0; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .user-role { color:rgba(255,255,255,.82); font-size:10px; margin:1px 0 0; }
-.header-logout-btn { background:#dc3545; border-color:#dc3545; border-radius:12px; }
-.header-logout-btn:active { background:#bb2d3b; }
+.header-logout-btn { background:transparent; border:0; border-radius:0; box-shadow:none; }
+.header-logout-btn:active { background:transparent; opacity:.65; }
 #sec-posKasir .pos-search-wrapper {
-  background:#176b50; border:0; padding:12px 22px 18px; gap:12px;
+  background:#00a65a; border:0; padding:12px 22px 18px; gap:12px;
 }
 #sec-posKasir #posPilihCabang {
   background:#fff !important; color:#1f2937; border:0 !important;
@@ -434,7 +434,24 @@
   #sec-posKasir .pos-category-wrapper { padding:8px 14px; }
 }
 
-  </style>
+  
+/* Ikon menu dan logout polos tanpa kotak, pada semua ukuran layar */
+.header-container #hamburger-btn,
+.header-container .header-logout-btn,
+.header-container #hamburger-btn:hover,
+.header-container .header-logout-btn:hover,
+.header-container #hamburger-btn:focus,
+.header-container .header-logout-btn:focus {
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  outline-offset:3px;
+  border-radius:0 !important;
+  color:#fff !important;
+}
+.header-container #hamburger-btn:active,
+.header-container .header-logout-btn:active { opacity:.7; }
+</style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
 </head>
 <body>
