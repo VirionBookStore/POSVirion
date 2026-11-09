@@ -451,7 +451,79 @@
 }
 .header-container #hamburger-btn:active,
 .header-container .header-logout-btn:active { opacity:.7; }
-</style>
+
+/* ===== Penyamaan warna hijau POS ke warna tombol LANJUT ===== */
+:root {
+  --primary-color:#00a65a;
+  --primary-hover:#008f4d;
+}
+/* Semua elemen navigasi utama memakai hijau terbaru */
+.sidebar,
+.sidebar-header,
+#loginWrapper {
+  background:#00a65a !important;
+}
+.sidebar { border-right-color:#008f4d !important; }
+.sidebar-header { border-bottom-color:rgba(255,255,255,.28) !important; }
+.sidebar-menu li a { color:#fff !important; }
+.sidebar-menu li a:hover,
+.sidebar-menu li a.active {
+  background:#008f4d !important;
+  color:#fff !important;
+  border-left-color:#fff !important;
+}
+.sidebar-section { color:rgba(255,255,255,.82) !important; }
+/* Warna tulisan supplier dan tombol scan */
+#posCategoryWrapper .cat-chip,
+#posCategoryWrapper .cat-chip:hover,
+#posCategoryWrapper .cat-chip:focus,
+#posCategoryWrapper .cat-chip:active {
+  color:#00a65a !important;
+}
+#posCategoryWrapper .cat-chip.active {
+  color:#008f4d !important;
+  background:#d1e7dd !important;
+}
+#sec-posKasir .btn-scan-mobile {
+  color:#00a65a !important;
+  border-color:#00a65a !important;
+}
+#sec-posKasir .btn-scan-mobile svg { stroke:#00a65a !important; }
+/* Pastikan tombol LANJUT tidak menimpa bagian bawah daftar barang */
+#sec-posKasir .pos-mobile-container {
+  display:flex !important;
+  flex-direction:column !important;
+  min-height:0;
+}
+#sec-posKasir .pos-product-list {
+  flex:1 1 0 !important;
+  min-height:0 !important;
+  overflow-y:auto !important;
+  padding-bottom:28px !important;
+  box-sizing:border-box;
+}
+#sec-posKasir .pos-bottom-bar {
+  position:relative !important;
+  inset:auto !important;
+  flex:0 0 auto !important;
+  flex-shrink:0 !important;
+  margin-top:0 !important;
+  z-index:2 !important;
+  padding:8px 15px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+  background:#fff !important;
+}
+#sec-posKasir .cart-floating-btn {
+  margin:0 !important;
+}
+@media screen and (max-width:600px) {
+  #sec-posKasir .pos-mobile-container {
+    height:calc(100dvh - 132px) !important;
+    height:calc(100vh - 132px) !important;
+  }
+  #sec-posKasir .pos-product-list { padding-bottom:36px !important; }
+}
+
+  </style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
 </head>
 <body>
