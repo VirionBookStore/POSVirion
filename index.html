@@ -7355,5 +7355,75 @@ document.addEventListener('change', function(e) {
   });
 })();
 </script>
+
+<!-- Final theme overrides: placed after all existing styles to win the cascade -->
+<style id="virion-final-green-theme">
+:root { --primary-color:#00a65a !important; --primary-hover:#008f4d !important; }
+/* Sidebar and all its sections: replace legacy dark green */
+body .sidebar,
+body .sidebar .sidebar-header,
+body .sidebar .sidebar-menu,
+body .sidebar .sidebar-section {
+  background-color:#00a65a !important;
+}
+body .sidebar { border-right:1px solid #008f4d !important; }
+body .sidebar .sidebar-header { border-bottom:1px solid rgba(255,255,255,.28) !important; }
+body .sidebar .sidebar-menu li a,
+body .sidebar .sidebar-section { color:#fff !important; }
+body .sidebar .sidebar-menu li a:hover,
+body .sidebar .sidebar-menu li a.active {
+  background-color:#00a65a !important;
+  color:#fff !important;
+  border-left-color:#fff !important;
+}
+/* Supplier text and barcode icon use the same new green */
+#posCategoryWrapper .cat-chip,
+#posCategoryWrapper .cat-chip:hover,
+#posCategoryWrapper .cat-chip:focus,
+#posCategoryWrapper .cat-chip:active { color:#00a65a !important; }
+#posCategoryWrapper .cat-chip.active {
+  color:#008f4d !important;
+  background-color:#d1e7dd !important;
+}
+#sec-posKasir .btn-scan-mobile {
+  color:#00a65a !important;
+  border-color:#00a65a !important;
+}
+#sec-posKasir .btn-scan-mobile svg { stroke:#00a65a !important; }
+/* Product list scrolls independently; checkout bar stays after the list */
+#sec-posKasir .pos-mobile-container {
+  display:flex !important;
+  flex-direction:column !important;
+  height:calc(100dvh - 132px) !important;
+  min-height:320px !important;
+  overflow:hidden !important;
+}
+#sec-posKasir #posProductList {
+  display:block !important;
+  flex:1 1 0 !important;
+  height:auto !important;
+  min-height:0 !important;
+  overflow-y:auto !important;
+  overscroll-behavior:contain;
+  padding-bottom:24px !important;
+  box-sizing:border-box !important;
+}
+#sec-posKasir .pos-bottom-bar {
+  display:flex !important;
+  position:relative !important;
+  flex:0 0 auto !important;
+  width:100% !important;
+  margin:0 !important;
+  padding:8px 15px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+  background:#fff !important;
+  z-index:5 !important;
+  box-sizing:border-box !important;
+}
+@media screen and (max-width:600px) {
+  #sec-posKasir .pos-mobile-container { height:calc(100dvh - 132px) !important; }
+  #sec-posKasir #posProductList { padding-bottom:32px !important; }
+}
+</style>
+
 </body>
 </html>
