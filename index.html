@@ -7436,5 +7436,64 @@ body .sidebar .sidebar-menu li a.active {
 }
 </style>
 
+
+<style id="virion-pos-layout-final">
+/* Final layout: POS occupies the available app viewport; cart remains in normal flex flow */
+@media screen and (max-width: 600px) {
+  body:has(#sec-posKasir.active) .content-body {
+    display:flex !important;
+    flex:1 1 0 !important;
+    flex-direction:column !important;
+    min-height:0 !important;
+    height:0 !important;
+    overflow:hidden !important;
+    padding:0 !important;
+  }
+  body:has(#sec-posKasir.active) #sec-posKasir.active {
+    display:flex !important;
+    flex:1 1 0 !important;
+    flex-direction:column !important;
+    min-height:0 !important;
+    height:100% !important;
+    overflow:hidden !important;
+  }
+  #sec-posKasir .pos-mobile-container {
+    display:flex !important;
+    flex:1 1 0 !important;
+    flex-direction:column !important;
+    width:100% !important;
+    height:100% !important;
+    min-height:0 !important;
+    max-height:100% !important;
+    overflow:hidden !important;
+  }
+  #sec-posKasir .pos-search-wrapper,
+  #sec-posKasir .pos-category-wrapper {
+    flex:0 0 auto !important;
+  }
+  #sec-posKasir #posProductList {
+    display:block !important;
+    flex:1 1 0 !important;
+    height:0 !important;
+    min-height:0 !important;
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch !important;
+    padding-bottom:12px !important;
+  }
+  #sec-posKasir .pos-bottom-bar {
+    display:flex !important;
+    position:static !important;
+    inset:auto !important;
+    flex:0 0 auto !important;
+    width:100% !important;
+    margin:0 !important;
+    padding:8px 15px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    z-index:5 !important;
+    background:#fff !important;
+    box-sizing:border-box !important;
+  }
+}
+</style>
+
 </body>
 </html>
