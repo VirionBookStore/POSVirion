@@ -7547,5 +7547,61 @@ body > .pos-bottom-bar#virionPosBottomPortal .cart-floating-btn {
 })();
 </script>
 
+
+<style id="virion-cartbar-runtime-v8">
+#virionPosBottomPortal {
+  position:fixed !important;
+  left:0 !important; right:0 !important; bottom:0 !important;
+  width:100% !important; display:none !important;
+  z-index:2147483647 !important;
+  margin:0 !important;
+  padding:8px 15px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+  background:#fff !important; box-sizing:border-box !important;
+  box-shadow:0 -3px 12px rgba(0,0,0,.12) !important;
+}
+#virionPosBottomPortal .cart-floating-btn {
+  display:flex !important; width:100% !important; min-height:58px !important;
+  margin:0 !important; box-sizing:border-box !important;
+}
+@media(max-width:600px) {
+  #sec-posKasir #posProductList { padding-bottom:90px !important; }
+}
+</style>
+<script id="virion-cartbar-runtime-v8">
+(function(){
+  function syncCartBar(){
+    var bar=document.getElementById('virionPosBottomPortal') ||
+             document.querySelector('#sec-posKasir .pos-bottom-bar');
+    var pos=document.getElementById('sec-posKasir');
+    var app=document.getElementById('appWrapper');
+    if(!bar || !pos || !app) return;
+    if(bar.parentElement!==document.body) document.body.appendChild(bar);
+    bar.id='virionPosBottomPortal';
+    var appVisible=getComputedStyle(app).display!=='none';
+    var posActive=pos.classList.contains('active');
+    bar.style.setProperty('display', appVisible && posActive ? 'flex' : 'none', 'important');
+    bar.style.setProperty('position','fixed','important');
+    bar.style.setProperty('left','0','important');
+    bar.style.setProperty('right','0','important');
+    bar.style.setProperty('bottom','0','important');
+    bar.style.setProperty('z-index','2147483647','important');
+  }
+  function start(){
+    syncCartBar();
+    var pos=document.getElementById('sec-posKasir');
+    var app=document.getElementById('appWrapper');
+    if(pos && app){
+      new MutationObserver(syncCartBar).observe(pos,{attributes:true,attributeFilter:['class']});
+      new MutationObserver(syncCartBar).observe(app,{attributes:true,attributeFilter:['style','class']});
+    }
+    document.addEventListener('click',function(){setTimeout(syncCartBar,60);},true);
+    window.addEventListener('resize',syncCartBar);
+    setInterval(syncCartBar,700);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
+})();
+</script>
+
 </body>
 </html>
