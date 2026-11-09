@@ -342,6 +342,98 @@
     #sec-riwayatPerBarang .card-body > div:first-child > div:last-child .btn { width: 100%; justify-content: center; }
   }
 
+  
+/* ===== Header POS modern hijau Virion ===== */
+.header-container {
+  background:#176b50;
+  color:#fff;
+  padding:12px 22px;
+  border:0;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  min-height:76px;
+  box-sizing:border-box;
+}
+.header-title-wrapper { display:flex; align-items:center; gap:14px; min-width:0; }
+.header-brand-title { color:#fff; font-size:30px; line-height:1; font-weight:800; letter-spacing:.2px; }
+.store-logo {
+  width:54px; height:54px; flex:0 0 54px; border-radius:50%;
+  object-fit:contain; border:3px solid rgba(255,255,255,.45);
+  background:#fff; padding:3px; box-sizing:border-box;
+}
+.header-icon-btn {
+  width:42px; height:42px; flex:0 0 42px; padding:9px;
+  display:inline-flex; align-items:center; justify-content:center;
+  color:#fff; background:rgba(255,255,255,.13);
+  border:1px solid rgba(255,255,255,.28); border-radius:12px;
+  cursor:pointer;
+}
+.header-icon-btn svg { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+#hamburger-btn { display:inline-flex; font-size:0; }
+.header-right-wrapper { display:flex; align-items:center; gap:12px; }
+.user-profile {
+  display:flex; align-items:center; gap:10px; padding:7px 16px;
+  border:0; border-radius:40px; background:rgba(255,255,255,.20);
+  color:#fff; min-width:0;
+}
+.user-avatar { width:42px; height:42px; flex:0 0 42px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,.55); background:rgba(255,255,255,.25); }
+.user-info { min-width:0; text-align:left; }
+.user-name { color:#fff; font-size:16px; font-weight:700; margin:0; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.user-role { color:rgba(255,255,255,.82); font-size:10px; margin:1px 0 0; }
+.header-logout-btn { background:#dc3545; border-color:#dc3545; border-radius:12px; }
+.header-logout-btn:active { background:#bb2d3b; }
+#sec-posKasir .pos-search-wrapper {
+  background:#176b50; border:0; padding:12px 22px 18px; gap:12px;
+}
+#sec-posKasir #posPilihCabang {
+  background:#fff !important; color:#1f2937; border:0 !important;
+  border-radius:16px !important; min-height:54px; padding:12px 14px !important;
+}
+#sec-posKasir #searchPosMobile {
+  background:#fff !important; color:#1f2937; border:0 !important;
+  border-radius:40px !important; min-height:54px; padding:12px 18px 12px 48px !important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important; background-position:16px center !important; background-size:22px 22px !important;
+}
+#sec-posKasir .btn-scan-mobile {
+  background:#f1f5f9; color:#176b50; border:0; border-radius:16px;
+  min-width:54px; min-height:54px; padding:10px 14px;
+}
+#sec-posKasir .pos-category-wrapper { background:#fff; }
+#sec-posKasir .pos-bottom-bar { background:#fff; }
+@media screen and (max-width:992px) {
+  .header-container { padding:10px 12px; min-height:68px; gap:7px; }
+  .header-title-wrapper { gap:8px; }
+  .header-brand-title { font-size:23px; }
+  .store-logo { width:43px; height:43px; flex-basis:43px; }
+  .header-icon-btn { width:36px; height:36px; flex-basis:36px; padding:7px; border-radius:10px; }
+  .header-icon-btn svg { width:22px; height:22px; }
+  .header-right-wrapper { gap:7px; }
+  .user-profile { display:flex; gap:6px; padding:4px 9px; }
+  .user-avatar { width:32px; height:32px; flex-basis:32px; }
+  .user-name { max-width:84px; font-size:12px; }
+  .user-role { display:none; }
+  #sec-posKasir .pos-search-wrapper { padding:10px 14px 16px; gap:8px; }
+  #sec-posKasir #posPilihCabang { flex:0 0 100px !important; width:100px !important; font-size:12px !important; min-height:48px; padding:8px 6px !important; }
+  #sec-posKasir #searchPosMobile { min-height:48px; font-size:14px !important; padding:10px 10px 10px 40px !important; background-position:12px center !important; background-size:19px 19px !important; }
+  #sec-posKasir .btn-scan-mobile { flex:0 0 48px; width:48px; min-width:48px; min-height:48px; padding:8px; }
+}
+@media screen and (max-width:380px) {
+  .header-brand-title { font-size:20px; }
+  .header-title-wrapper { gap:6px; }
+  .store-logo { width:38px; height:38px; flex-basis:38px; }
+  .user-profile { padding:3px 6px; }
+  .user-name { max-width:68px; font-size:11px; }
+  .header-right-wrapper { gap:5px; }
+}
+@media screen and (max-width:600px) {
+  body:has(#sec-posKasir.active) .content-body { padding:0; }
+  #sec-posKasir .pos-mobile-container { height:calc(100dvh - 132px); min-height:360px; }
+  #sec-posKasir .pos-category-wrapper { padding:8px 14px; }
+}
+
   </style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
 </head>
@@ -406,12 +498,12 @@
     <div class="main-wrapper">
       <div class="header-container">
         <div class="header-title-wrapper">
-          <button id="hamburger-btn" onclick="toggleSidebar()">☰ Menu</button>
+          <button id="hamburger-btn" class="header-icon-btn" onclick="toggleSidebar()" title="Menu" aria-label="Menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
           <img id="storeLogoImg" src="" class="store-logo" title="Klik untuk ubah Logo Toko" onclick="openLogoModal()" alt="Logo">
-          <div style="display: flex; flex-direction: column; justify-content: center;">
-            <h2 style="margin: 0; font-size: 18px; color: #212529;">Virion Book Store</h2>
-            <span id="cashierNameDisplay" style="font-size: 12px; font-weight: bold; color: #198754;">Kasir: -</span>
-          </div>
+          <div class="header-brand-title">Virion</div>
+          <span id="cashierNameDisplay" style="display:none;">Kasir: -</span>
         </div>
 
         <div class="header-right-wrapper">
@@ -422,7 +514,9 @@
               <p class="user-role" id="userRole">-</p>
             </div>
           </div>
-          <button class="btn btn-danger btn-sm" onclick="logoutUser()">Logout</button>
+          <button class="header-icon-btn header-logout-btn" onclick="logoutUser()" title="Logout" aria-label="Logout">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M21 3v18"/></svg>
+          </button>
         </div>
       </div>
 
@@ -871,8 +965,8 @@
       <select id="posPilihCabang" class="form-control pos-search-input" style="display:none; width:auto; margin-right:8px;" onchange="loadPosKatalog()"></select>
       
       <input type="text" id="searchPosMobile" class="form-control pos-search-input" placeholder="Cari nama atau kode" oninput="handlePosSearchMobile()" autocomplete="off">
-      <button class="btn-scan-mobile" onclick="togglePosScanner()">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3M9 9h6v6H9z"/></svg>
+      <button class="btn-scan-mobile" onclick="togglePosScanner()" title="Scan Barcode" aria-label="Scan Barcode">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M7 5v14M10 5v14M13 5v14M16 5v14M19 5v14"/></svg>
       </button>
     </div>
     <div id="readerPos"></div>
