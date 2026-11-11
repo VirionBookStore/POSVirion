@@ -525,6 +525,20 @@
 
   </style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
+  <script>
+    // Daftarkan cache aplikasi agar shell POSVirion dapat dibuka kembali saat offline.
+    (function(){
+      if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('./sw.js', {scope:'./'})
+          .then(function(reg){
+            console.info('[AS-Pos] Offline shell aktif:', reg.scope);
+            reg.update().catch(function(){});
+          })
+          .catch(function(err){ console.warn('[AS-Pos] Service Worker belum aktif:', err); });
+      });
+    })();
+  </script>
 </head>
 <body>
 
@@ -2167,6 +2181,18 @@ async function loadDashboardByDate() {
     }
   } catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard tidak dapat dibaca:', cacheErr); }
 
+  // Saat offline, gunakan snapshot dashboard yang sudah tersimpan dan jangan
+  // menunggu GAS. Jika belum pernah tersimpan, tampilkan pesan yang jelas.
+  if (!navigator.onLine) {
+    if (hasDashboardCache) {
+      if (btn) { btn.disabled = false; btn.innerText = 'Data tersimpan (offline)'; }
+      return;
+    }
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#856404;">Dashboard belum memiliki cache di perangkat ini. Sambungkan internet sekali untuk memuat data awal.</td></tr>';
+    if (btn) { btn.disabled = false; btn.innerText = 'Coba lagi'; }
+    return;
+  }
+
   if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Perbarui' : 'Memuat...'; }
   if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
 
@@ -2252,9 +2278,10 @@ async function loadDashboardByDate() {
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
     })
     .withFailureHandler(function(err) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard.</td></tr>';
-      if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
-      alert('Gagal memuat Dashboard: ' + (err && err.message ? err.message : err));
+      // Jangan timpa data cache yang sudah berhasil dirender jika server gagal.
+      if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#856404;">Gagal menghubungi server. Data lokal belum tersedia untuk rentang tanggal ini.</td></tr>';
+      if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Data tersimpan (offline)' : 'Coba lagi'; }
+      if (navigator.onLine) console.warn('[AS-Pos] Gagal memuat Dashboard:', err);
     })
     .getDashboardData(startStr, endStr, branchId);
 }
