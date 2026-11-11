@@ -6959,6 +6959,18 @@ function prosesCheckoutReturFinal() {
           try { localRows = await getAllFromStore('riwayatPenjualan'); } catch (e) {}
         }
 
+        // Mode pesawat: tampilkan riwayat lokal langsung tanpa menunggu panggilan GAS.
+        // Untuk akun cabang, batasi ke cabang aktif agar data lintas cabang tidak tercampur.
+        if (!navigator.onLine) {
+          var offlineBranch = String((currentUser && currentUser.id_cabang) || '').trim();
+          globalRiwayatData = localRows.map(asposNormalizeRiwayatRow).filter(function(row) {
+            if (!offlineBranch) return true;
+            return String(row.id_cabang || '').trim() === offlineBranch;
+          });
+          filterRiwayatTransaksi();
+          return;
+        }
+
         // Server tetap menjadi sumber riwayat transaksi yang sudah tersimpan.
         // IndexedDB menambahkan transaksi pending yang belum ada di server.
         var serverRows = [];
