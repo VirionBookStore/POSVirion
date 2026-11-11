@@ -20,3 +20,18 @@ Tanggal: 2026-11-11. Status: audit awal; belum siap produksi.
 7. Jangan merge ke main sebelum lulus pengujian dan disetujui pemilik.
 
 Catatan: ini dokumen audit, bukan klaim bahwa implementasi sudah selesai.
+
+## Implementasi awal di branch pengujian (2026-11-11)
+- Ditambahkan `sw.js`: cache shell navigasi dan tiga pustaka UI eksternal yang saat ini dipakai halaman. Request POST dan endpoint GAS tidak dimasukkan ke cache.
+- `index.html` mendaftarkan Service Worker pada HTTPS.
+- Dashboard: jika offline, gunakan snapshot dashboard localStorage untuk kombinasi cabang/tanggal; jika snapshot belum ada, tampilkan pesan yang jelas dan tidak menunggu GAS. Kegagalan refresh server tidak menghapus snapshot yang sudah tampil.
+- Startup promo dan daftar cabang kini membaca IndexedDB lebih dahulu.
+- Riwayat penjualan kini merender data IndexedDB tanpa menunggu GAS ketika perangkat terdeteksi offline, dengan pembatasan cabang untuk akun cabang.
+- Supplier, stok masuk, retur barang, POS, dan retur POS sudah memiliki jalur local-first di kode dasar; perlu diuji end-to-end pada perangkat.
+
+## Batasan dan pekerjaan yang masih wajib
+- Cache Service Worker baru aktif setelah perangkat membuka versi branch yang di-host melalui HTTPS minimal sekali saat online. APK/WebView harus diuji terpisah karena konfigurasi origin dan update-nya dapat berbeda.
+- Login offline hanya mungkin jika sesi pengguna sudah tersimpan di perangkat. Login pertama tetap membutuhkan server.
+- Dashboard offline hanya dapat menampilkan snapshot untuk tanggal/cabang yang pernah dimuat; belum menghitung ulang laporan dari transaksi lokal secara penuh.
+- Kode klien mengirim `clientTransactionId` saat retry transaksi, tetapi deduplikasi server/GAS belum diverifikasi dari sumber GAS. Jangan anggap retry aman dari duplikasi sebelum fungsi `simpanTransaksi` di GAS diperiksa dan diuji.
+- Perlu uji mode pesawat nyata, transaksi offline, stok lokal, restart aplikasi, retry setelah online, dan pembuktian satu nota hanya tercatat sekali di Google Sheets. Tidak ada perubahan ke branch produksi.
