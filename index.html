@@ -2097,13 +2097,20 @@ window.loadBarang = async function(isLocalOnly = false) {
     function initApp() {
       loadLogoToko();
       loadBarang();
-      google.script.run.withSuccessHandler(function(data) {
-        globalPromoData = data;
-      }).getPromoList();
+      // Promo dibaca dari IndexedDB lebih dulu agar startup tetap berjalan offline.
+      asposGetLocalOrServer('promo', 'getPromoList', []).then(function(result) {
+        globalPromoData = result.data || [];
+      }).catch(function(err) {
+        console.warn('[AS-Pos] Promo lokal/server belum tersedia:', err);
+        globalPromoData = globalPromoData || [];
+      });
 
       // --- GENERATE FILTER CABANG KHUSUS OWNER ---
       if (isOwner()) {
-        google.script.run.withSuccessHandler(function(cabangs) {
+        // Isi pilihan cabang dari cache lokal terlebih dahulu; jika belum ada,
+        // bootstrap dari GAS dan simpan ke IndexedDB melalui helper local-first.
+        asposGetLocalOrServer('cabang', 'getCabang', []).then(function(result) {
+          const cabangs = Array.isArray(result.data) ? result.data : [];
           const pasangDropdown = (idElement, teksAwal) => {
             let el = document.getElementById(idElement);
             if(el) {
@@ -2115,14 +2122,19 @@ window.loadBarang = async function(isLocalOnly = false) {
           pasangDropdown("dashboardPilihCabang", "Semua Cabang (Global)");
           pasangDropdown("posPilihCabang", "-- Pilih Cabang Transaksi --");
           pasangDropdown("returPilihCabang", "-- Pilih Cabang Retur --");
-          pasangDropdown("filterRiwayatCabang", "Semua Cabang"); 
-          pasangDropdown("filterBarangCabang", "Semua Cabang"); 
-          pasangDropdown("filterMasukCabang", "Semua Cabang"); 
-          pasangDropdown("filterReturCabang", "Semua Cabang"); 
-
+          pasangDropdown("filterRiwayatCabang", "Semua Cabang");
+          pasangDropdown("filterBarangCabang", "Semua Cabang");
+          pasangDropdown("filterMasukCabang", "Semua Cabang");
+          pasangDropdown("filterReturCabang", "Semua Cabang");
           var wrapBarang = document.getElementById("wrapperDropdownCabangBarang");
           if(wrapBarang) wrapBarang.style.display = "block";
-        }).getCabang();
+        }).catch(function(err) {
+          console.warn('[AS-Pos] Daftar cabang tidak tersedia offline:', err);
+          ['dashboardPilihCabang','posPilihCabang','returPilihCabang','filterRiwayatCabang','filterBarangCabang','filterMasukCabang','filterReturCabang'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.style.display = 'inline-block'; el.innerHTML = '<option value="">Cabang belum tersimpan di perangkat</option>'; }
+          });
+        });
       } else {
         // HIDE PAKSA UNTUK ADMIN DAN USER
         ["posPilihCabang", "dashboardPilihCabang", "returPilihCabang", "filterRiwayatCabang", "filterBarangCabang", "filterMasukCabang", "filterReturCabang"].forEach(id => {
