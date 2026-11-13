@@ -7706,8 +7706,8 @@ function prosesCheckoutReturFinal() {
 
             // Buang cache memori lama agar layar berikutnya membaca data hasil restore.
             if (window.ASPOS_MEM_CACHE) window.ASPOS_MEM_CACHE = {};
-            if (Array.isArray(window.globalDataBarang)) {
-              window.globalDataBarang = await getAllFromStore('masterBarang');
+            if (typeof globalDataBarang !== 'undefined') {
+              globalDataBarang = await getAllFromStore('masterBarang');
             }
             if (typeof window.checkLocalDbStatus === 'function') {
               await Promise.resolve(window.checkLocalDbStatus()).catch(function(){});
