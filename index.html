@@ -6933,7 +6933,17 @@ function prosesCheckoutReturFinal() {
       var ready=await asposEnsureIndexedDB();
       if(ready) {
         cachedRecord=await asposReadBranchCatalogCache(branchId);
-        if(cachedRecord && Array.isArray(cachedRecord.items)) cached=cachedRecord.items;
+        if(cachedRecord && Array.isArray(cachedRecord.items)) {
+          cached=cachedRecord.items;
+          // Migrasikan cache localStorage/versi lama ke object store per-cabang.
+          await putStore('catalogCabang',{
+            branchId:String(branchId||'GLOBAL'),
+            items:cached,
+            savedAt:Number(cachedRecord.savedAt || Date.now())
+          }).catch(function(err){
+            console.warn('[AS-Pos] Migrasi cache cabang tertunda:',err);
+          });
+        }
       }
       if(!cached || !cached.length) {
         if(ready) {
