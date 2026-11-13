@@ -2274,8 +2274,28 @@ async function loadDashboardByDate() {
     }
   } catch (cacheErr) { console.warn('[AS-Pos] Cache dashboard tidak dapat dibaca:', cacheErr); }
 
-  if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Perbarui' : 'Memuat...'; }
-  if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
+  if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Perbarui' : 'Memuat lokal...'; }
+  if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Membaca data lokal...</td></tr>';
+
+  // Ambil riwayat transaksi dan master dari IndexedDB terlebih dahulu.
+  var localDashboardRows = [];
+  var localDashboardReady = await asposEnsureIndexedDB();
+  if (localDashboardReady) {
+    localDashboardRows = await getAllFromStore('riwayatPenjualan').catch(function(){ return []; });
+    var localDashboardGoods = await getAllFromStore('masterBarang').catch(function(){ return []; });
+    globalDataSupplier = await getAllFromStore('supplier').catch(function(){ return globalDataSupplier || []; });
+    if (localDashboardRows.length) {
+      processDashboardLocalData(localDashboardRows, localDashboardGoods, startStr, endStr, branchId);
+      hasDashboardCache = true;
+    }
+  }
+  if (!asposIsOnline()) {
+    if (!localDashboardRows.length && !hasDashboardCache && tbody) {
+      tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Data Dashboard belum tersimpan di perangkat. Buka menu ini saat online atau lakukan Sinkronkan Data terlebih dahulu.</td></tr>';
+    }
+    if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
+    return;
+  }
 
   google.script.run
     .withSuccessHandler(async function(data) {
@@ -2359,9 +2379,9 @@ async function loadDashboardByDate() {
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
     })
     .withFailureHandler(function(err) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard.</td></tr>';
+      if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Gagal memuat dashboard dan belum ada cache lokal.</td></tr>';
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
-      alert('Gagal memuat Dashboard: ' + (err && err.message ? err.message : err));
+      console.warn('[AS-Pos] Dashboard memakai data lokal/cache:', err);
     })
     .getDashboardData(startStr, endStr, branchId);
 }
@@ -2439,8 +2459,8 @@ function processDashboardLocalData(salesList, barangList, startStr, endStr, bran
 
   // FALLBACK: Jika riwayat lokal dari server tidak menyimpan array items,
   // alihkan otomatis panggil data lengkap dari server.
-  if (totalTransaksi > 0 && totalBarangTerjual === 0) {
-    console.warn("Data items tidak ditemukan di IndexedDB lokal, beralih mengambil dari server...");
+  if (totalTransaksi > 0 && totalBarangTerjual === 0 && asposIsOnline()) {
+    console.warn("Detail item tidak tersedia di IndexedDB lokal, gunakan server saat online.");
     fetchDashboardFromServer(startStr, endStr, branchId);
     return;
   }
@@ -2655,65 +2675,85 @@ function renderDashboardUI(data, startStr, endStr) {
       if (next) next.disabled = masterBarangCurrentPage >= totalPages;
     }
 
-    function loadSupplier() {
-      google.script.run.withSuccessHandler(function(data) {
+    async function loadSupplier() {
+      const tbody = document.querySelector("#tabelSupplier tbody");
+      const render = function(data) {
+        data = Array.isArray(data) ? data : [];
         globalDataSupplier = data;
-        var tbody = document.querySelector("#tabelSupplier tbody");
-        tbody.innerHTML = "";
-        
+        if (tbody) tbody.innerHTML = "";
         let selectSupplier = document.getElementById("filterPilihSupplier");
         if(selectSupplier) {
+          const previous = selectSupplier.value;
           selectSupplier.innerHTML = '<option value="">-- Semua Supplier --</option>';
-          data.forEach(s => {
+          data.forEach(function(s) {
             let opt = document.createElement("option");
-            // Disimpan ID dan Nama agar memfilter semua kemungkinan isi dari database
             opt.value = s.id_supplier + "|||" + s.nama_supplier;
             opt.innerText = s.nama_supplier + " (" + s.id_supplier + ")";
             selectSupplier.appendChild(opt);
           });
+          if (previous) selectSupplier.value = previous;
         }
-
-        if (data.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center;">Belum ada data supplier.</td></tr>`;
+        if (!data.length) {
+          if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Belum ada data supplier tersimpan di perangkat.</td></tr>';
           return;
         }
-
-        data.forEach(function(s) {
+        if (tbody) data.forEach(function(s) {
           var tr = document.createElement("tr");
-          tr.innerHTML = `<td><b>${s.id_supplier}</b></td><td>${s.nama_supplier}</td><td>${s.kontak || '-'}</td><td>${s.alamat || '-'}</td>`;
+          tr.innerHTML = '<td><b>' + escapeDashboardHtml(s.id_supplier) + '</b></td><td>' +
+            escapeDashboardHtml(s.nama_supplier) + '</td><td>' +
+            escapeDashboardHtml(s.kontak || '-') + '</td><td>' +
+            escapeDashboardHtml(s.alamat || '-') + '</td>';
           tbody.appendChild(tr);
         });
-      }).getSupplier();
+      };
+      const ready = await asposEnsureIndexedDB();
+      const local = ready ? await getAllFromStore('supplier').catch(function(){return [];}) : [];
+      if (local.length) render(local);
+      else if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;">Belum ada cache supplier. Sinkronkan saat online untuk penggunaan offline.</td></tr>';
+      if (!asposIsOnline()) return;
+      asposCallGasLocalFirst('getSupplier', []).then(async function(data) {
+        if (!Array.isArray(data)) return;
+        if (ready) await replaceStore('supplier', data).catch(function(){});
+        render(data);
+      }).catch(function(err){ console.warn('[AS-Pos] Supplier memakai cache lokal:', err); });
     }
 
-    function loadPromoManajemen() {
-      google.script.run.withSuccessHandler(function(data) {
+    async function loadPromoManajemen() {
+      const tbody = document.querySelector("#tabelPromo tbody");
+      const render = function(data) {
+        data = Array.isArray(data) ? data : [];
         globalPromoData = data;
-        var tbody = document.querySelector("#tabelPromo tbody");
+        if (!tbody) return;
         tbody.innerHTML = "";
-        if (data.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">Belum ada aturan promo. Silahkan import data promo.</td></tr>`;
+        if (!data.length) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Belum ada aturan promo tersimpan di perangkat.</td></tr>';
           return;
         }
         data.forEach(function(p) {
-          let nmBarang = "-";
-          let f = globalDataBarang.find(b => b.id_barang === p.id_barang);
-          if(f) nmBarang = f.nama_barang;
+          let found = globalDataBarang.find(b => String(b.id_barang) === String(p.id_barang));
+          let nmBarang = found ? found.nama_barang : (p.nama_barang || '-');
           let tipe = p.tipe_promo == 1 ? "Diskon (%)" : (p.tipe_promo == 2 ? "Potongan Nominal" : "Harga Bundling");
-          
           var tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td><b>${p.id_barang}</b></td>
-            <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${nmBarang}">${nmBarang}</td>
-            <td><span style="background:#0d6efd; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px;">${tipe}</span></td>
-            <td><b>${p.min_qty}</b> pcs</td>
-            <td>${p.tipe_promo == 1 ? p.besaran_promo + '%' : (p.tipe_promo == 2 ? 'Rp '+p.besaran_promo.toLocaleString('id-ID') : '-')}</td>
-            <td>${p.tipe_promo == 3 ? 'Rp '+p.harga_bundling.toLocaleString('id-ID') : '-'}</td>
-            <td><b style="color:${p.status==='Aktif'?'#00a65a':'#dc3545'};">${p.status}</b></td>
-          `;
+          tr.innerHTML = '<td><b>' + escapeDashboardHtml(p.id_barang) + '</b></td>' +
+            '<td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + escapeDashboardHtml(nmBarang) + '">' + escapeDashboardHtml(nmBarang) + '</td>' +
+            '<td><span style="background:#0d6efd;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;">' + tipe + '</span></td>' +
+            '<td><b>' + (Number(p.min_qty)||0) + '</b> pcs</td>' +
+            '<td>' + (p.tipe_promo == 1 ? (Number(p.besaran_promo)||0) + '%' : (p.tipe_promo == 2 ? 'Rp ' + (Number(p.besaran_promo)||0).toLocaleString('id-ID') : '-')) + '</td>' +
+            '<td>' + (p.tipe_promo == 3 ? 'Rp ' + (Number(p.harga_bundling)||0).toLocaleString('id-ID') : '-') + '</td>' +
+            '<td><b style="color:' + (p.status==='Aktif'?'#00a65a':'#dc3545') + ';">' + escapeDashboardHtml(p.status || '-') + '</b></td>';
           tbody.appendChild(tr);
         });
-      }).getPromoList();
+      };
+      const ready = await asposEnsureIndexedDB();
+      const local = ready ? await getAllFromStore('promo').catch(function(){return [];}) : [];
+      if (local.length) render(local);
+      else if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;">Belum ada cache promo. Sinkronkan saat online untuk penggunaan offline.</td></tr>';
+      if (!asposIsOnline()) return;
+      asposCallGasLocalFirst('getPromoList', []).then(async function(data) {
+        if (!Array.isArray(data)) return;
+        if (ready) await replaceStore('promo', data).catch(function(){});
+        render(data);
+      }).catch(function(err){ console.warn('[AS-Pos] Promo memakai cache lokal:', err); });
     }
 
     function loadStokMasuk() {
@@ -3873,7 +3913,7 @@ function simpanEditItemModal() {
       }
     }
 
-    function loadPenjualanPerBarang() {
+    async function loadPenjualanPerBarang() {
       var mode = document.getElementById("filterModeBarang").value;
       var start = document.getElementById("filterBarangStart").value;
       var end = document.getElementById("filterBarangEnd").value;
@@ -4052,7 +4092,66 @@ function simpanEditItemModal() {
         }
       }
 
-          // Laporan server adalah sumber utama karena data retur/tukar dapat tersimpan
+          // Cache laporan per filter agar halaman laporan tetap dapat dibuka tanpa internet.
+      var reportCacheKey = [mode, start, end, branchId, selectedSupplierRaw, selectedKasir].join('|||');
+      var reportDbReady = await asposEnsureIndexedDB();
+      var cachedReport = reportDbReady ? await getStoreItem('laporanPenjualan', reportCacheKey).catch(function(){return null;}) : null;
+      if (cachedReport && Array.isArray(cachedReport.rows)) {
+        renderAdvancedReport(cachedReport.rows);
+      } else {
+        // Fallback dari detail transaksi yang sudah tersimpan lokal.
+        var localReportSales = reportDbReady ? await getAllFromStore('riwayatPenjualan').catch(function(){return [];}) : [];
+        var localReportRows = [];
+        var startReportDate = start ? new Date(start + 'T00:00:00') : null;
+        var endReportDate = end ? new Date(end + 'T23:59:59.999') : null;
+        localReportSales.forEach(function(trx) {
+          var trxDate = parseTanggalRiwayat(trx.tanggal);
+          if (!trxDate || (startReportDate && trxDate < startReportDate) || (endReportDate && trxDate > endReportDate)) return;
+          if (branchId && branchId !== 'Semua' && String(trx.id_cabang || '') !== String(branchId)) return;
+          var items = Array.isArray(trx.items) ? trx.items : (Array.isArray(trx.detail) ? trx.detail : []);
+          if (typeof trx.items === 'string') { try { items = JSON.parse(trx.items); } catch(e) { items = []; } }
+          if (typeof trx.detail === 'string' && !items.length) { try { items = JSON.parse(trx.detail); } catch(e) { items = []; } }
+          items.forEach(function(it) {
+            localReportRows.push({
+              no_nota: trx.no_nota || trx.nota || '',
+              tanggal: trx.tanggal || '',
+              kasir: trx.kasir || trx.petugas || '',
+              id_barang: it.id_barang || '',
+              nama_barang: it.nama_barang || it.id_barang || '',
+              supplier: it.supplier || '',
+              harga_satuan: Number(it.harga_satuan || it.harga_jual || it.harga) || 0,
+              qty: Number(it.qty) || 0,
+              subtotal: Number(it.subtotal) || 0
+            });
+          });
+        });
+        if (mode === 'rekap') {
+          var localGrouped = {};
+          localReportRows.forEach(function(it) {
+            var key = String(it.id_barang) + '|||' + String(it.supplier || '');
+            if (!localGrouped[key]) localGrouped[key] = {
+              id_barang:it.id_barang,nama_barang:it.nama_barang,supplier:it.supplier,
+              harga_satuan:it.harga_satuan,total_qty:0,total_pendapatan:0,total_brutto:0
+            };
+            localGrouped[key].total_qty += it.qty;
+            localGrouped[key].total_pendapatan += it.subtotal;
+            localGrouped[key].total_brutto += it.harga_satuan * it.qty;
+          });
+          localReportRows = Object.keys(localGrouped).map(function(key) {
+            var row = localGrouped[key];
+            row.harga_satuan = row.total_qty ? row.total_brutto / row.total_qty : 0;
+            return row;
+          });
+        }
+        if (localReportRows.length) renderAdvancedReport(localReportRows);
+        else if (!asposIsOnline()) {
+          var offlineBody = document.getElementById('bodyRekapBarang');
+          if (offlineBody) offlineBody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#dc3545;padding:20px;">Belum ada cache laporan/detail transaksi di perangkat. Buka laporan saat online agar tersimpan untuk akses offline.</td></tr>';
+        }
+      }
+      if (!asposIsOnline()) return;
+
+      // Laporan server adalah sumber utama karena data retur/tukar dapat tersimpan
       // sebagai detail transaksi negatif yang tidak tercakup dalam cache header lokal.
       google.script.run
         .withSuccessHandler(async function(resData) {
@@ -4137,23 +4236,23 @@ function simpanEditItemModal() {
               grouped[key].total_brutto += price * qty;
               if (!grouped[key].harga_satuan && price) grouped[key].harga_satuan = price;
             });
-            renderAdvancedReport(Object.keys(grouped).map(function(key) {
+            var finalReportRows = Object.keys(grouped).map(function(key) {
               var item = grouped[key];
-              // Render memakai harga_satuan * total_qty untuk brutto. Simpan
-              // brutto terhitung sebagai nilai per-unit ekuivalen agar harga jual
-              // historis berbeda tetap menghasilkan jumlah brutto yang tepat.
               if (item.total_qty !== 0) item.harga_satuan = item.total_brutto / item.total_qty;
               else item.harga_satuan = 0;
               return item;
-            }));
+            });
+            renderAdvancedReport(finalReportRows);
+            if (reportDbReady) await putStore('laporanPenjualan', {cacheKey:reportCacheKey,rows:finalReportRows,savedAt:Date.now()}).catch(function(){});
           } else {
             renderAdvancedReport(rows);
+            if (reportDbReady) await putStore('laporanPenjualan', {cacheKey:reportCacheKey,rows:rows,savedAt:Date.now()}).catch(function(){});
           }
         })
         .withFailureHandler(function(err) {
           var tbody = document.getElementById('bodyRekapBarang');
-          if (tbody) tbody.innerHTML = '<tr><td style="text-align:center;color:#dc3545;padding:20px;">Laporan gagal dimuat. Sinkronkan data lalu coba kembali.</td></tr>';
-          console.error('[AS-Pos] Laporan penjualan barang:', err);
+          if (!cachedReport && tbody) tbody.innerHTML = '<tr><td style="text-align:center;color:#dc3545;padding:20px;">Laporan belum tersedia di cache lokal. Buka laporan saat online untuk menyimpan datanya.</td></tr>';
+          console.warn('[AS-Pos] Laporan menggunakan cache lokal:', err);
         })
         .getLaporanPenjualanBarangAdvanced(start, end, (mode === 'supplier' || mode === 'rekap') ? 'transaksi' : mode, branchId);
     }
@@ -5733,7 +5832,7 @@ function prosesCheckoutReturFinal() {
     // ENGINE INDEXEDDB: LOCAL-FIRST ARCHITECTURE (ROBUST VERSION)
     // =========================================================================
     const dbName = "AS_POS_DB";
-    const dbVersion = 9;
+    const dbVersion = 10;
     let db = null;
     let dbFailed = false;
     let dbOpening = null;
@@ -5741,6 +5840,7 @@ function prosesCheckoutReturFinal() {
     const dbStores = {
       'masterBarang': 'id_barang',
       'catalogCabang': 'branchId',
+      'laporanPenjualan': 'cacheKey',
       'supplier': 'id_supplier',
       'promo': 'id_barang',
       'stokMasuk': 'id_transaksi',
