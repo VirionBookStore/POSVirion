@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aspos-virion-shell-v3';
+const CACHE_NAME = 'aspos-virion-shell-v4';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -28,15 +28,23 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET' || req.url.includes('script.google.com')) return;
 
   event.respondWith(
-    caches.match(req).then(cached => {
-      const fetchPromise = fetch(req).then(networkRes => {
-        if (networkRes && networkRes.status === 200) {
-          const clone = networkRes.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
-        }
-        return networkRes;
-      }).catch(() => cached);
-      return cached || fetchPromise;
-    })
+    (req.mode === 'navigate' || req.url.endsWith('/index.html'))
+      ? fetch(req).then(networkRes => {
+          if (networkRes && networkRes.status === 200) {
+            const clone = networkRes.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+          }
+          return networkRes;
+        }).catch(() => caches.match(req).then(cached => cached || caches.match('./index.html')))
+      : caches.match(req).then(cached => {
+          const fetchPromise = fetch(req).then(networkRes => {
+            if (networkRes && networkRes.status === 200) {
+              const clone = networkRes.clone();
+              caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+            }
+            return networkRes;
+          }).catch(() => cached);
+          return cached || fetchPromise;
+        })
   );
 });

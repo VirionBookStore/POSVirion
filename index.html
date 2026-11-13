@@ -526,35 +526,66 @@
   
 /* POS mobile: pakai tinggi area konten yang tersedia agar cart bar turun ke dasar layar. */
 @media screen and (max-width: 600px) {
+  /* Gunakan dynamic viewport Chrome Android, bukan 100vh yang bisa melewati area terlihat. */
+  html, body { height:100%; min-height:0; }
+  body:has(#sec-posKasir.active) {
+    height:100dvh !important;
+    min-height:0 !important;
+    overflow:hidden !important;
+  }
+  body:has(#sec-posKasir.active) .main-wrapper {
+    height:100dvh !important;
+    min-height:0 !important;
+    overflow:hidden !important;
+  }
   body:has(#sec-posKasir.active) .content-body {
-    padding: 0 !important;
-    overflow: hidden !important;
-    display: flex !important;
-    flex-direction: column !important;
-    min-height: 0 !important;
+    box-sizing:border-box !important;
+    padding:0 !important;
+    overflow:hidden !important;
+    display:flex !important;
+    flex:1 1 0 !important;
+    flex-direction:column !important;
+    min-height:0 !important;
+    height:auto !important;
   }
   body:has(#sec-posKasir.active) #sec-posKasir.active {
-    display: flex !important;
-    flex: 1 1 auto !important;
-    flex-direction: column !important;
-    min-height: 0 !important;
-    height: 100% !important;
+    display:flex !important;
+    flex:1 1 0 !important;
+    flex-direction:column !important;
+    min-height:0 !important;
+    height:auto !important;
+    overflow:hidden !important;
   }
   #sec-posKasir .pos-mobile-container {
-    height: 100% !important;
-    min-height: 0 !important;
-    flex: 1 1 auto !important;
+    box-sizing:border-box !important;
+    display:flex !important;
+    flex:1 1 0 !important;
+    flex-direction:column !important;
+    height:auto !important;
+    min-height:0 !important;
+    overflow:hidden !important;
   }
+  #sec-posKasir .pos-search-wrapper,
+  #sec-posKasir .pos-category-wrapper { flex:0 0 auto !important; }
   #sec-posKasir .pos-product-list {
-    flex: 1 1 0 !important;
-    min-height: 0 !important;
-    padding-bottom: 12px !important;
+    flex:1 1 0 !important;
+    min-height:0 !important;
+    height:auto !important;
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:12px !important;
   }
   #sec-posKasir .pos-bottom-bar {
-    margin-top: auto !important;
-    flex: 0 0 auto !important;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    position:relative !important;
+    inset:auto !important;
+    display:flex !important;
+    flex:0 0 auto !important;
+    margin-top:0 !important;
+    padding:8px 15px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    background:#fff !important;
+    z-index:5 !important;
   }
+  #sec-posKasir .cart-floating-btn { flex:1 1 auto !important; }
 }
 /* Status koneksi berupa titik kecil di bawah nama pengguna, tanpa badge/latar. */
 .header-container .user-info {
@@ -5702,13 +5733,14 @@ function prosesCheckoutReturFinal() {
     // ENGINE INDEXEDDB: LOCAL-FIRST ARCHITECTURE (ROBUST VERSION)
     // =========================================================================
     const dbName = "AS_POS_DB";
-    const dbVersion = 8;
+    const dbVersion = 9;
     let db = null;
     let dbFailed = false;
     let dbOpening = null;
 
     const dbStores = {
       'masterBarang': 'id_barang',
+      'catalogCabang': 'branchId',
       'supplier': 'id_supplier',
       'promo': 'id_barang',
       'stokMasuk': 'id_transaksi',
@@ -6774,28 +6806,54 @@ function prosesCheckoutReturFinal() {
       });
     }
 
-    // Simpan & baca katalog barang per-cabang di localStorage/IndexedDB agar perpindahan cabang & mode offline instan
+    // Cache katalog dipisahkan per cabang di IndexedDB. localStorage hanya fallback ringan.
     function asposSaveBranchCatalogCache(branchId, list) {
-      const key = 'aspos_catalog_branch_' + String(branchId || 'GLOBAL');
+      const id = String(branchId || 'GLOBAL');
+      const key = 'aspos_catalog_branch_' + id;
+      const savedAt = Date.now();
       asposSetMemCache(key, list);
-      try {
-        localStorage.setItem(key, JSON.stringify({ ts: Date.now(), items: list }));
-      } catch (e) {
-        // Jika melebihi kuota localStorage (>5MB), tetap aman di IndexedDB masterBarang
+      // Persist penuh ke IndexedDB agar tidak terkena kuota localStorage untuk katalog besar.
+      if (db && Array.isArray(list)) {
+        putStore('catalogCabang', { branchId:id, items:list, savedAt:savedAt }).catch(function(err) {
+          console.warn('[AS-Pos] Gagal menyimpan cache cabang ke IndexedDB:', err);
+        });
       }
+      try {
+        // Fallback hanya untuk katalog kecil; data besar tetap aman di IndexedDB.
+        const compact = JSON.stringify({ ts:savedAt, items:list });
+        if (compact.length < 3500000) localStorage.setItem(key, compact);
+      } catch (e) {}
     }
 
-    function asposReadBranchCatalogCache(branchId) {
-      const key = 'aspos_catalog_branch_' + String(branchId || 'GLOBAL');
+    async function asposReadBranchCatalogCache(branchId) {
+      const id = String(branchId || 'GLOBAL');
+      const key = 'aspos_catalog_branch_' + id;
       const mem = asposGetMemCache(key);
-      if (mem && Array.isArray(mem.data)) return mem.data;
+      if (mem && Array.isArray(mem.data)) return { items:mem.data, savedAt:mem.ts || 0 };
+      if (db && db.objectStoreNames.contains('catalogCabang')) {
+        try {
+          const record = await new Promise(function(resolve,reject) {
+            const tx = db.transaction('catalogCabang','readonly');
+            const req = tx.objectStore('catalogCabang').get(id);
+            req.onsuccess = function(){ resolve(req.result || null); };
+            req.onerror = function(){ reject(req.error || new Error('Gagal membaca cache cabang')); };
+            tx.onerror = function(){ reject(tx.error || new Error('Transaksi baca cache cabang gagal')); };
+          });
+          if (record && Array.isArray(record.items)) {
+            window.ASPOS_MEM_CACHE[key] = { data:record.items, ts:Number(record.savedAt || 0) };
+            return { items:record.items, savedAt:Number(record.savedAt || 0) };
+          }
+        } catch (e) {
+          console.warn('[AS-Pos] Baca cache cabang IndexedDB gagal:', e);
+        }
+      }
       try {
         const raw = localStorage.getItem(key);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed && Array.isArray(parsed.items)) {
-            asposSetMemCache(key, parsed.items);
-            return parsed.items;
+            window.ASPOS_MEM_CACHE[key] = { data:parsed.items, ts:Number(parsed.ts || Date.now()) };
+            return { items:parsed.items, savedAt:Number(parsed.ts || 0) };
           }
         }
       } catch (e) {}
@@ -6847,63 +6905,108 @@ function prosesCheckoutReturFinal() {
     }
 
     window.loadPosKatalog = async function(forceRefresh) {
+      // Token mencegah respons cabang lama menimpa katalog cabang yang baru dipilih.
+      var requestId = (window.__asposPosCatalogRequestId || 0) + 1;
+      window.__asposPosCatalogRequestId = requestId;
       var searchEl=document.getElementById("searchPosMobile");
       if(searchEl) searchEl.value="";
       var branchId=currentUser?String(currentUser.id_cabang||''):'';
       if(typeof isOwner==='function' && isOwner()){
-        // ID dropdown yang benar pada UI POS V3.1 adalah posPilihCabang.
-        // pos_branch_filter tetap didukung sebagai alias bila dipakai pada varian UI lain.
         var branchEl=document.getElementById("posPilihCabang") || document.getElementById("pos_branch_filter");
         if(branchEl && branchEl.value) branchId=String(branchEl.value).trim();
         else branchId=String(localStorage.getItem('aspos_selected_branch')||'').trim();
+        if(branchId) {
+          try { localStorage.setItem('aspos_selected_branch', branchId); } catch(e) {}
+        }
       }
-      console.log('[AS-Pos] Memuat katalog untuk cabang:', branchId);
+      console.log('[AS-Pos] Local-first katalog cabang:', branchId);
       if(typeof isOwner==='function' && isOwner() && !branchId){
-        var listEl=document.getElementById("posProductList");
-        if(listEl) listEl.innerHTML='<div style="text-align:center;padding:20px;color:#dc3545;font-size:14px;font-weight:bold;">Silakan pilih cabang transaksi terlebih dahulu dari menu di atas.</div>';
+        var noBranchList=document.getElementById("posProductList");
+        if(noBranchList) noBranchList.innerHTML='<div style="text-align:center;padding:20px;color:#dc3545;font-size:14px;font-weight:bold;">Silakan pilih cabang transaksi terlebih dahulu dari menu di atas.</div>';
         return [];
       }
+
       var cacheKey='aspos_catalog_branch_'+String(branchId||'GLOBAL');
-      var cached=asposReadBranchCatalogCache(branchId);
+      var cachedRecord=null;
+      var cached=null;
+      // Buka database lokal, lalu ambil cache katalog khusus cabang ini.
       var ready=await asposEnsureIndexedDB();
-      if(!cached || !cached.length){
-        if(ready){
+      if(ready) {
+        cachedRecord=await asposReadBranchCatalogCache(branchId);
+        if(cachedRecord && Array.isArray(cachedRecord.items)) {
+          cached=cachedRecord.items;
+          // Migrasikan cache localStorage/versi lama ke object store per-cabang.
+          await putStore('catalogCabang',{
+            branchId:String(branchId||'GLOBAL'),
+            items:cached,
+            savedAt:Number(cachedRecord.savedAt || Date.now())
+          }).catch(function(err){
+            console.warn('[AS-Pos] Migrasi cache cabang tertunda:',err);
+          });
+        }
+      }
+      if(!cached || !cached.length) {
+        if(ready) {
           var idbItems=await getAllFromStore('masterBarang').catch(function(){return [];});
           var savedBranch=String(localStorage.getItem('aspos_master_branch')||'');
-          if(idbItems.length && savedBranch===String(branchId||'')){
-            cached=idbItems; asposSaveBranchCatalogCache(branchId,cached);
+          if(idbItems.length && savedBranch===String(branchId||'')) {
+            cached=idbItems;
+            asposSaveBranchCatalogCache(branchId,cached);
           }
         }
       }
-      if(cached && cached.length){
+
+      if(cached && cached.length) {
         globalDataBarang=cached;
         renderPosSuppliers(); renderPosProductList();
-        if(!forceRefresh && asposIsMemFresh(cacheKey)) return cached;
+        // Cache segar: tidak perlu menunggu server. Refresh dijalankan hanya bila sudah kedaluwarsa.
+        var savedAt=(cachedRecord && cachedRecord.savedAt) || (window.ASPOS_MEM_CACHE[cacheKey] && window.ASPOS_MEM_CACHE[cacheKey].ts) || 0;
+        var isFresh=savedAt && (Date.now()-savedAt < ASPOS_CACHE_TTL_MS);
+        if(!forceRefresh && isFresh) return cached;
       } else {
-        var list=document.getElementById("posProductList");
-        if(list) list.innerHTML='<div style="text-align:center;padding:20px;color:#6c757d;">Memuat katalog barang...</div>';
+        var emptyList=document.getElementById("posProductList");
+        if(emptyList) emptyList.innerHTML='<div style="text-align:center;padding:20px;color:#6c757d;">Mengambil katalog cabang pertama kali...</div>';
       }
-      if(!asposIsOnline()){
-        if(!cached || !cached.length){
+
+      if(!asposIsOnline()) {
+        if(!cached || !cached.length) {
           var offlineList=document.getElementById("posProductList");
-          if(offlineList) offlineList.innerHTML='<div style="text-align:center;padding:20px;color:#dc3545;">Mode Offline: Katalog cabang ini belum tersimpan di perangkat.</div>';
+          if(offlineList) offlineList.innerHTML='<div style="text-align:center;padding:20px;color:#dc3545;">Mode Offline: katalog cabang ini belum pernah disimpan di perangkat.</div>';
         }
         return cached||[];
       }
-      try{
+
+      // Jangan tahan UI ketika cache sudah tampil. Server refresh berjalan di belakang layar.
+      try {
         var serverData=await asposCallGasLocalFirst('getBarang',[branchId]);
         if(!Array.isArray(serverData)) return cached||[];
         var safeData=await applyPendingStockDeductions_(serverData,branchId);
-        globalDataBarang=safeData;
+        // Simpan cache cabang meskipun pengguna sudah berpindah ke cabang lain.
         asposSaveBranchCatalogCache(branchId,safeData);
-        if(ready){
-          await replaceStore('masterBarang',safeData);
+        if(ready) {
+          await putStore('catalogCabang',{branchId:String(branchId||'GLOBAL'),items:safeData,savedAt:Date.now()}).catch(function(err){
+            console.warn('[AS-Pos] Cache cabang belum tersimpan:',err);
+          });
+        }
+        // Hanya respons permintaan terbaru boleh mengganti tampilan dan master aktif.
+        if(requestId !== window.__asposPosCatalogRequestId) return safeData;
+        var selectedNow = branchId;
+        if(typeof isOwner==='function' && isOwner()) {
+          var selectedEl=document.getElementById("posPilihCabang") || document.getElementById("pos_branch_filter");
+          if(selectedEl && selectedEl.value) selectedNow=String(selectedEl.value).trim();
+        }
+        if(String(selectedNow) !== String(branchId)) return safeData;
+        globalDataBarang=safeData;
+        if(ready) {
+          await replaceStore('masterBarang',safeData).catch(function(err){
+            console.warn('[AS-Pos] Master aktif gagal diperbarui:',err);
+          });
           localStorage.setItem('aspos_master_branch',String(branchId||''));
         }
         renderPosSuppliers(); renderPosProductList();
         return safeData;
-      }catch(err){
-        console.warn('[AS-Pos] Refresh katalog gagal; menggunakan cache lokal:',err);
+      } catch(err) {
+        console.warn('[AS-Pos] Refresh katalog gagal; cache lokal tetap dipakai:',err);
         return cached||[];
       }
     };
@@ -6925,13 +7028,16 @@ function prosesCheckoutReturFinal() {
       updateModeReturUI();
 
       const cacheKey = 'aspos_catalog_branch_' + String(branchId || 'GLOBAL');
-      let cached = asposReadBranchCatalogCache(branchId);
-      if (cached && cached.length) {
+      await asposEnsureIndexedDB();
+      const cachedRecord = await asposReadBranchCatalogCache(branchId);
+      const cached = cachedRecord && Array.isArray(cachedRecord.items) ? cachedRecord.items : [];
+      if (cached.length) {
         globalDataBarang = cached;
         renderReturSuppliers();
         renderReturProductList();
         renderKeranjangRetur();
-        if (!forceRefresh && asposIsMemFresh(cacheKey)) return;
+        const savedAt = Number(cachedRecord.savedAt || 0);
+        if (!forceRefresh && savedAt && Date.now() - savedAt < ASPOS_CACHE_TTL_MS) return;
       }
 
       if (!asposIsOnline()) return;
