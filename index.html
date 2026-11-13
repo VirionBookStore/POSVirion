@@ -523,7 +523,62 @@
   #sec-posKasir .pos-product-list { padding-bottom:36px !important; }
 }
 
-  </style>
+  
+/* POS mobile: pakai tinggi area konten yang tersedia agar cart bar turun ke dasar layar. */
+@media screen and (max-width: 600px) {
+  body:has(#sec-posKasir.active) .content-body {
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+  }
+  body:has(#sec-posKasir.active) #sec-posKasir.active {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: 100% !important;
+  }
+  #sec-posKasir .pos-mobile-container {
+    height: 100% !important;
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+  }
+  #sec-posKasir .pos-product-list {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    padding-bottom: 12px !important;
+  }
+  #sec-posKasir .pos-bottom-bar {
+    margin-top: auto !important;
+    flex: 0 0 auto !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+/* Status koneksi berupa titik kecil di bawah nama pengguna, tanpa badge/latar. */
+.header-container .user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.header-container .aspos-connection-dot {
+  display: block;
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
+  border-radius: 50%;
+  padding: 0;
+  margin: 4px 0 0;
+  border: 0;
+  box-shadow: none;
+  line-height: 0;
+  font-size: 0;
+  background: #dc2626;
+}
+
+</style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
 </head>
 <body>
@@ -600,6 +655,7 @@
             <img id="userAvatar" src="" class="user-avatar" alt="Avatar">
             <div class="user-info">
               <p class="user-name" id="userName">-</p>
+              <span id="asposOfflineStatus" class="aspos-connection-dot" role="status" aria-label="Status koneksi" title="Memeriksa koneksi"></span>
               <p class="user-role" id="userRole">-</p>
             </div>
           </div>
@@ -6012,15 +6068,20 @@ function prosesCheckoutReturFinal() {
         getAllFromStore('pendingTransactions').then(function(list) {
           let el = document.getElementById('asposOfflineStatus');
           if (!el) {
-            el = document.createElement('div');
+            const userInfo = document.querySelector('.header-container .user-info');
+            if (!userInfo) return;
+            el = document.createElement('span');
             el.id = 'asposOfflineStatus';
-            el.style.cssText = 'position:fixed;right:10px;top:76px;bottom:auto;z-index:99999;padding:7px 11px;border-radius:20px;background:#fff;border:1px solid #dee2e6;box-shadow:0 2px 8px rgba(0,0,0,.12);font-size:11px;font-weight:700;';
-            document.body.appendChild(el);
+            el.className = 'aspos-connection-dot';
+            el.setAttribute('role', 'status');
+            el.setAttribute('aria-label', 'Status koneksi');
+            userInfo.insertBefore(el, document.getElementById('userRole'));
           }
           if (list.length) {
-            el.style.color = '#d97706';
+            el.style.backgroundColor = asposIsOnline() ? '#2563eb' : '#dc2626';
             el.style.cursor = 'pointer';
-            el.innerText = '⏳ ' + list.length + ' transaksi menunggu sinkronisasi';
+            el.setAttribute('aria-label', (asposIsOnline() ? 'Online' : 'Offline') + ', ' + list.length + ' transaksi menunggu sinkronisasi');
+            el.title = list.length + ' transaksi menunggu sinkronisasi. Klik untuk melihat detail.';
             // Tampilkan penyebab terakhir saat notifikasi diklik, agar antrean yang gagal
             // tidak terlihat seperti sekadar badge yang tidak dapat dijelaskan.
             el.onclick = function() {
@@ -6062,11 +6123,11 @@ function prosesCheckoutReturFinal() {
             })[0];
             el.title = 'Klik untuk melihat detail antrean. ' + String(oldest.lastError || '');
           } else {
-            el.style.color = asposIsOnline() ? '#00a65a' : '#dc3545';
+            el.style.backgroundColor = asposIsOnline() ? '#2563eb' : '#dc2626';
             el.style.cursor = 'default';
             el.onclick = null;
-            el.title = '';
-            el.innerText = asposIsOnline() ? '🟢 Online • Tersinkron' : '🔴 Offline';
+            el.setAttribute('aria-label', asposIsOnline() ? 'Online' : 'Offline');
+            el.title = asposIsOnline() ? 'Online' : 'Offline';
           }
         }).catch(function(){});
       });
