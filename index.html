@@ -430,7 +430,7 @@
 }
 @media screen and (max-width:600px) {
   body:has(#sec-posKasir.active) .content-body { padding:0; }
-  #sec-posKasir .pos-mobile-container { height:calc(100dvh - 132px); min-height:360px; }
+  #sec-posKasir .pos-mobile-container { height:calc(100dvh - 108px); min-height:360px; }
   #sec-posKasir .pos-category-wrapper { padding:8px 14px; }
 }
 
@@ -6014,7 +6014,7 @@ function prosesCheckoutReturFinal() {
           if (!el) {
             el = document.createElement('div');
             el.id = 'asposOfflineStatus';
-            el.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:99999;padding:7px 11px;border-radius:20px;background:#fff;border:1px solid #dee2e6;box-shadow:0 2px 8px rgba(0,0,0,.12);font-size:11px;font-weight:700;';
+            el.style.cssText = 'position:fixed;right:10px;top:76px;bottom:auto;z-index:99999;padding:7px 11px;border-radius:20px;background:#fff;border:1px solid #dee2e6;box-shadow:0 2px 8px rgba(0,0,0,.12);font-size:11px;font-weight:700;';
             document.body.appendChild(el);
           }
           if (list.length) {
@@ -7299,19 +7299,62 @@ function prosesCheckoutReturFinal() {
     // Sinkronisasi manual utama didefinisikan satu kali pada blok IndexedDB utama.
 
     window.backupIndexedDB = async function() {
-      var ready=await asposEnsureIndexedDB();
-      if(!ready) throw new Error('Database lokal tidak tersedia.');
-      var storeNames=Object.keys(dbStores);
-      var backup={format:'ASPOS_LOCAL_BACKUP',version:1,exportedAt:new Date().toISOString(),stores:{}};
-      for(var i=0;i<storeNames.length;i++){
-        backup.stores[storeNames[i]]=await getAllFromStore(storeNames[i]);
+      var btn = document.getElementById('btnBackup');
+      if (btn) { btn.disabled = true; btn.innerText = '⏳ Mempersiapkan...'; }
+      try {
+        var ready = await asposEnsureIndexedDB();
+        if (!ready) throw new Error('Database lokal tidak tersedia.');
+        var storeNames = Object.keys(dbStores);
+        var backup = {
+          _meta: {
+            app: 'AS-Pos',
+            format: 'ASPOS_LOCAL_BACKUP',
+            version: 2,
+            exportedAt: new Date().toISOString()
+          },
+          stores: {}
+        };
+        for (var i = 0; i < storeNames.length; i++) {
+          backup.stores[storeNames[i]] = await getAllFromStore(storeNames[i]);
+          if (btn) btn.innerText = '⏳ Ekstrak ' + Math.round((i + 1) / storeNames.length * 100) + '%';
+        }
+        var jsonText = JSON.stringify(backup);
+        var fileName = 'ASPOS-Backup-' + new Date().toISOString().slice(0, 10) + '.json';
+
+        // APK: gunakan bridge Android agar file disimpan langsung ke folder Download.
+        if (window.ASPosAndroid && typeof window.ASPosAndroid.saveTextFile === 'function') {
+          var result = window.ASPosAndroid.saveTextFile(fileName, jsonText, 'application/json');
+          if (result && typeof result.then === 'function') result = await result;
+          if (!result || String(result).indexOf('OK:') !== 0) {
+            throw new Error(String(result || 'Android gagal menyimpan file.').replace(/^ERROR:/, ''));
+          }
+          alert('Backup berhasil disimpan ke folder Download HP.\\n\\nFile: ' + fileName);
+        } else {
+          // Browser: unduh menggunakan Blob URL; jangan kirim URL blob ke DownloadManager native.
+          var blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function() {
+            a.remove();
+            URL.revokeObjectURL(url);
+          }, 3000);
+        }
+        if (btn) btn.innerText = '✅ Backup berhasil';
+        setTimeout(function() {
+          if (btn) { btn.innerText = 'Download Backup'; btn.disabled = false; }
+        }, 2500);
+        return true;
+      } catch (err) {
+        console.error('[AS-Pos] backup:', err);
+        if (btn) { btn.innerText = 'Download Backup'; btn.disabled = false; }
+        alert('Gagal melakukan backup:\\n\\n' + (err && err.message ? err.message : err));
+        return false;
       }
-      var blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-      var url=URL.createObjectURL(blob), a=document.createElement('a');
-      a.href=url; a.download='ASPOS-Backup-'+new Date().toISOString().slice(0,10)+'.json';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function(){URL.revokeObjectURL(url);},1000);
-      return true;
     };
 
     window.restoreIndexedDB = async function(fileInput) {
