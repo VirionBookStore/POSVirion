@@ -6974,9 +6974,6 @@ function prosesCheckoutReturFinal() {
         // Simpan cache cabang meskipun pengguna sudah berpindah ke cabang lain.
         asposSaveBranchCatalogCache(branchId,safeData);
         if(ready) {
-          await replaceStore('masterBarang',safeData).catch(function(err){
-            console.warn('[AS-Pos] Master aktif gagal diperbarui:',err);
-          });
           await putStore('catalogCabang',{branchId:String(branchId||'GLOBAL'),items:safeData,savedAt:Date.now()}).catch(function(err){
             console.warn('[AS-Pos] Cache cabang belum tersimpan:',err);
           });
@@ -6991,6 +6988,9 @@ function prosesCheckoutReturFinal() {
         if(String(selectedNow) !== String(branchId)) return safeData;
         globalDataBarang=safeData;
         if(ready) {
+          await replaceStore('masterBarang',safeData).catch(function(err){
+            console.warn('[AS-Pos] Master aktif gagal diperbarui:',err);
+          });
           localStorage.setItem('aspos_master_branch',String(branchId||''));
         }
         renderPosSuppliers(); renderPosProductList();
