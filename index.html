@@ -639,6 +639,7 @@
       <div style="margin-bottom: 20px;">
         <h3 style="font-size: 16px; font-weight: bold; color: #1e293b; margin: 0;">Status Data Kasir</h3>
         <p id="txtDbStatus" style="font-size: 12px; color: #64748b; margin-top: 4px;">Database lokal: menyiapkan pemeriksaan... <span style="font-size:10px;color:#94a3b8;">(DB v5)</span></p>
+        <p id="localDbStatusBadge" style="font-size:11px;color:#64748b;margin-top:5px;">DB lokal sedang diperiksa...</p>
       </div>
 
       <div style="background: #e5f8fa; border: 1px solid #087f8c; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
@@ -1735,7 +1736,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbw9HGopgT6OboCLKRFssYVUaGaaPo_-RmZFZUi6MXgcA5RoPhV_MBkDBcJtvcRYLXs/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbz1B_d5jiU0Rc-k8uH3Z0URRFO6w3QZinewRngvTLIF3V6UBHDcykESIhARchlblkI/exec"
     };
 
     (function installGasBridge() {
@@ -2104,7 +2105,26 @@ window.loadBarang = async function(isLocalOnly = false) {
           pasangDropdown("filterRiwayatCabang", "Semua Cabang"); 
           pasangDropdown("filterBarangCabang", "Semua Cabang"); 
           pasangDropdown("filterMasukCabang", "Semua Cabang"); 
-          pasangDropdown("filterReturCabang", "Semua Cabang"); 
+          pasangDropdown("filterReturCabang", "Semua Cabang");
+
+          // Pulihkan cabang operasional OWNER dari pilihan perangkat sebelumnya.
+          var savedOperationalBranch = '';
+          try { savedOperationalBranch = localStorage.getItem('aspos_selected_branch') || ''; } catch (e) {}
+          ['posPilihCabang', 'returPilihCabang'].forEach(function(id) {
+            var select = document.getElementById(id);
+            if (!select) return;
+            if (savedOperationalBranch && Array.from(select.options).some(function(opt){ return opt.value === savedOperationalBranch; })) {
+              select.value = savedOperationalBranch;
+            } else if (!savedOperationalBranch && cabangs && cabangs.length === 1 && cabangs[0].id_cabang) {
+              select.value = String(cabangs[0].id_cabang);
+            }
+          });
+          var posBranch = document.getElementById('posPilihCabang');
+          var returBranch = document.getElementById('returPilihCabang');
+          if (posBranch && posBranch.value && !savedOperationalBranch) {
+            try { localStorage.setItem('aspos_selected_branch', posBranch.value); } catch (e) {}
+          }
+          if (returBranch && posBranch && posBranch.value && !returBranch.value) returBranch.value = posBranch.value;
 
           var wrapBarang = document.getElementById("wrapperDropdownCabangBarang");
           if(wrapBarang) wrapBarang.style.display = "block";
@@ -4426,12 +4446,41 @@ function simpanEditItemModal() {
       google.script.run.withSuccessHandler(res => { alert(res); closeSupplierModal(); loadSupplier(); }).tambahSupplier(payload);
     }
 
-    function handleStokMasukSubmit(event) {
+    
+    // Ambil cabang tujuan untuk mutasi. OWNER wajib memakai pilihan cabang aktif.
+    function getTargetBranchForMutation_(optionalSelectId) {
+      var owner = typeof isOwner === 'function' && isOwner();
+      var candidates = [optionalSelectId, 'cabangStokMasuk', 'cabangRetur',
+        'posPilihCabang', 'returPilihCabang', 'filterCabangGlobal', 'selectCabangAktif'];
+      if (owner) {
+        for (var i = 0; i < candidates.length; i++) {
+          var el = candidates[i] && document.getElementById(candidates[i]);
+          if (el && el.value && el.value !== 'ALL' && el.value !== 'Semua') {
+            localStorage.setItem('aspos_selected_branch', String(el.value).trim());
+            return String(el.value).trim();
+          }
+        }
+        var saved = localStorage.getItem('aspos_selected_branch') || '';
+        if (saved && saved !== 'ALL' && saved !== 'Semua') return saved;
+        alert('Akun OWNER wajib memilih cabang tujuan terlebih dahulu sebelum input Barang Masuk / Retur.');
+        return null;
+      }
+      if (typeof currentUser !== 'undefined' && currentUser && currentUser.id_cabang) {
+        return String(currentUser.id_cabang).trim();
+      }
+      var stored = localStorage.getItem('aspos_selected_branch') || '';
+      if (stored && stored !== 'ALL' && stored !== 'Semua') return stored;
+      alert('ID cabang tidak tersedia. Silakan login ulang atau pilih cabang.');
+      return null;
+    }
+
+function handleStokMasukSubmit(event) {
       event.preventDefault();
       var form = document.getElementById("formStokMasuk");
       var payload = {
-        id_barang: form.id_barang.value, qty_masuk: form.qty_masuk.value, keterangan: form.keterangan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: currentUser ? currentUser.id_cabang : ''
+        id_barang: form.id_barang.value, qty_masuk: form.qty_masuk.value, keterangan: form.keterangan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: getTargetBranchForMutation_('cabangStokMasuk')
       };
+      if (!payload.id_cabang) return;
       google.script.run.withSuccessHandler(function(res) {
         alert(res); closeStokMasukModal(); loadStokMasuk();
       }).tambahStokMasuk(payload);
@@ -4441,8 +4490,9 @@ function simpanEditItemModal() {
       event.preventDefault();
       var form = document.getElementById("formRetur");
       var payload = {
-        id_barang: form.id_barang.value, qty_retur: form.qty_retur.value, alasan: form.alasan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: currentUser ? currentUser.id_cabang : ''
+        id_barang: form.id_barang.value, qty_retur: form.qty_retur.value, alasan: form.alasan.value, petugas: currentUser ? currentUser.nama : 'Admin', id_cabang: getTargetBranchForMutation_('cabangRetur')
       };
+      if (!payload.id_cabang) return;
       google.script.run.withSuccessHandler(function(res) {
         alert(res); closeReturModal(); loadReturBarang();
       }).tambahReturBarang(payload);
@@ -4480,6 +4530,8 @@ function simpanEditItemModal() {
 
           if(processedRows.length === 0) throw new Error("Kolom ID Barang / Qty tidak ditemukan!");
           var petugasNama = currentUser ? currentUser.nama : 'Admin';
+          var targetBranch = getTargetBranchForMutation_('cabangStokMasuk');
+          if (!targetBranch) { btn.innerText = "Proses Import Masuk"; btn.disabled = false; return; }
 
           google.script.run.withSuccessHandler(function(res) {
             alert(res);
@@ -4487,7 +4539,7 @@ function simpanEditItemModal() {
             btn.disabled = false;
             closeImportMasukModal();
             loadStokMasuk();
-          }).importStokMasukExcel(processedRows, petugasNama, currentUser ? currentUser.id_cabang : "");
+          }).importStokMasukExcel(processedRows, petugasNama, targetBranch);
         } catch (err) {
           alert("Gagal: " + err.message);
           btn.innerText = "Proses Import Masuk";
@@ -4529,6 +4581,8 @@ function simpanEditItemModal() {
 
           if(processedRows.length === 0) throw new Error("Kolom ID Barang / Qty tidak ditemukan!");
           var petugasNama = currentUser ? currentUser.nama : 'Admin';
+          var targetBranch = getTargetBranchForMutation_('cabangRetur');
+          if (!targetBranch) { btn.innerText = "Proses Import Retur"; btn.disabled = false; return; }
 
           google.script.run.withSuccessHandler(function(res) {
             alert(res);
@@ -4536,7 +4590,7 @@ function simpanEditItemModal() {
             btn.disabled = false;
             closeImportReturModal();
             loadReturBarang();
-          }).importReturBarangExcel(processedRows, petugasNama, currentUser ? currentUser.id_cabang : "");
+          }).importReturBarangExcel(processedRows, petugasNama, targetBranch);
         } catch (err) {
           alert("Gagal: " + err.message);
           btn.innerText = "Proses Import Retur";
@@ -5592,7 +5646,7 @@ function prosesCheckoutReturFinal() {
     // ENGINE INDEXEDDB: LOCAL-FIRST ARCHITECTURE (ROBUST VERSION)
     // =========================================================================
     const dbName = "AS_POS_DB";
-    const dbVersion = 7;
+    const dbVersion = 8;
     let db = null;
     let dbFailed = false;
     let dbOpening = null;
@@ -5605,11 +5659,12 @@ function prosesCheckoutReturFinal() {
       'returBarang': 'id_retur',
       'riwayatPenjualan': 'no_nota',
       'cabang': 'id_cabang',
-      'pendingTransactions': 'clientTransactionId'
+      'pendingTransactions': 'clientTransactionId',
+      'pendingReturTukar': 'clientReturId'
     };
 
     function initIndexedDB(callback) {
-      if (db) { if (callback) callback(true); return; }
+      if (db) { window.__asposDbConnection=db; if (callback) callback(true); return; }
       if (dbOpening) {
         dbOpening.then(function(ok){ if(callback) callback(ok); });
         return;
@@ -5652,6 +5707,7 @@ function prosesCheckoutReturFinal() {
           request.onsuccess = function(event) {
             clearTimeout(timer);
             db = event.target.result;
+            window.__asposDbConnection = db;
             dbFailed = false;
 
             db.onversionchange = function() {
@@ -6147,6 +6203,7 @@ function prosesCheckoutReturFinal() {
     window.addEventListener('offline', updateOfflineTransactionStatus);
     setInterval(function() {
       updateOfflineTransactionStatus();
+      if (typeof window.checkLocalDbStatus === 'function') window.checkLocalDbStatus();
       if (asposIsOnline()) syncPendingTransactions();
     }, 60000);
 
@@ -6178,44 +6235,55 @@ function prosesCheckoutReturFinal() {
 
     window.checkLocalDbStatus = function() {
       const txt = document.getElementById('txtDbStatus');
-      if (!txt) return;
-
-      txt.innerHTML = '<span style="color:#64748b;">Database lokal: memeriksa...</span>';
+      const badge = document.getElementById('localDbStatusBadge');
+      if (txt) txt.innerHTML = '<span style="color:#64748b;">Database lokal: memeriksa...</span>';
 
       if (window.self !== window.top) {
-        txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Database lokal tidak dapat digunakan di iframe.</span><br>Gunakan link GitHub Pages langsung.';
-        return;
+        if (txt) txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Database lokal tidak dapat digunakan di iframe.</span><br>Gunakan link GitHub Pages langsung.';
+        if (badge) badge.textContent = 'DB lokal tidak tersedia di iframe';
+        return Promise.resolve({ barangCount: 0, pendingCount: 0, error: 'iframe' });
       }
 
-      initIndexedDB(async function(success) {
-        if (!success || !db) {
-          txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Database lokal gagal dibuka.</span><br>Silakan tutup tab aplikasi lain yang sedang membuka POS, lalu muat ulang halaman.';
-          return;
-        }
-
-        try {
-          const results = await Promise.all(Object.keys(dbStores).map(function(name) {
-            return getAllFromStore(name).then(function(data){ return {name:name,count:data.length}; });
-          }));
-          const total = results.reduce(function(sum,r){ return sum + r.count; }, 0);
-          const barang = results.find(function(r){ return r.name === 'masterBarang'; });
-          const lastSync = localStorage.getItem('aspos_last_sync') || 'Belum pernah';
-
-          if (total > 0) {
-            txt.innerHTML =
-              '<b style="color:#00a65a;">Database lokal AKTIF</b><br>' +
-              'Total data tersimpan: <b>' + total.toLocaleString('id-ID') + '</b> record' +
-              ' &nbsp;•&nbsp; Master barang: <b>' + (barang ? barang.count : 0).toLocaleString('id-ID') + '</b>' +
-              '<br><span style="color:#087f8c;"><b>Sinkronisasi terakhir:</b> ' + lastSync + '</span>';
-          } else {
-            txt.innerHTML =
-              '<span style="color:#d97706;"><b>Database lokal AKTIF, tetapi masih kosong.</b></span><br>' +
-              'Silakan klik <b>Sinkronkan Data</b> untuk mengambil data dari Google Sheets.';
+      return new Promise(function(resolve) {
+        initIndexedDB(async function(success) {
+          if (!success || !db) {
+            if (txt) txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Database lokal gagal dibuka.</span><br>Silakan tutup tab aplikasi lain yang sedang membuka POS, lalu muat ulang halaman.';
+            if (badge) badge.textContent = 'DB lokal gagal dibuka';
+            resolve({ barangCount: 0, pendingCount: 0, error: 'IndexedDB gagal dibuka' });
+            return;
           }
-        } catch(err) {
-          console.error('[AS-Pos] status DB', err);
-          txt.innerHTML = '<span style="color:#dc3545;">Database terbuka, tetapi gagal membaca isi database.</span>';
-        }
+          try {
+            const results = await Promise.all(Object.keys(dbStores).map(function(name) {
+              return getAllFromStore(name).then(function(data){ return {name:name,count:data.length,data:data}; });
+            }));
+            const total = results.reduce(function(sum,r){ return sum + r.count; }, 0);
+            const barang = results.find(function(r){ return r.name === 'masterBarang'; });
+            const pending = results.filter(function(r){ return r.name === 'pendingTransactions' || r.name === 'pendingReturTukar'; })
+              .reduce(function(sum,r){ return sum + (r.data || []).filter(function(item){ return String(item.status || '').toUpperCase() === 'PENDING'; }).length; }, 0);
+            const barangCount = barang ? barang.count : 0;
+            const lastSync = localStorage.getItem('aspos_last_sync') || 'Belum pernah';
+            if (txt) {
+              if (total > 0) {
+                txt.innerHTML = '<b style="color:#00a65a;">Database lokal AKTIF</b><br>' +
+                  'Total data tersimpan: <b>' + total.toLocaleString('id-ID') + '</b> record' +
+                  ' &nbsp;•&nbsp; Master barang: <b>' + barangCount.toLocaleString('id-ID') + '</b>' +
+                  '<br><span style="color:#087f8c;"><b>Sinkronisasi terakhir:</b> ' + lastSync + '</span>';
+              } else {
+                txt.innerHTML = '<span style="color:#d97706;"><b>Database lokal AKTIF, tetapi masih kosong.</b></span><br>' +
+                  'Silakan klik <b>Sinkronkan Data</b> untuk mengambil data dari Google Sheets.';
+              }
+            }
+            if (badge) badge.textContent = pending > 0
+              ? 'Offline Queue: ' + pending + ' transaksi | Katalog: ' + barangCount
+              : 'DB Lokal Siap (' + barangCount + ' item)';
+            resolve({ barangCount: barangCount, pendingCount: pending, totalCount: total });
+          } catch(err) {
+            console.error('[AS-Pos] status DB', err);
+            if (txt) txt.innerHTML = '<span style="color:#dc3545;">Database terbuka, tetapi gagal membaca isi database.</span>';
+            if (badge) badge.textContent = 'Gagal membaca DB lokal';
+            resolve({ barangCount: 0, pendingCount: 0, error: err.message });
+          }
+        });
       });
     };
 
@@ -6270,7 +6338,6 @@ function prosesCheckoutReturFinal() {
         };
 
         try {
-          // 1) Master barang diambil per 1000 record agar aman untuk data besar.
           if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil jumlah master barang dari Google Sheets...</b>';
           const totalBarang = Number(await gasCall('getBarangTotalCount', [])) || 0;
           await clearStore('masterBarang');
@@ -6283,11 +6350,6 @@ function prosesCheckoutReturFinal() {
           for (let offset = 0; offset < totalBarang; offset += batchSize) {
             const branchId = currentUser ? currentUser.id_cabang : null;
             const batchResult = await gasCall('getBarangBatch', [offset, batchSize, branchId]);
-            // GAS dapat mengembalikan batch dalam beberapa bentuk:
-            // 1) array langsung
-            // 2) {data:[...]}
-            // 3) {data:{data:[...]}}
-            // Normalisasi semuanya menjadi array sebelum disimpan.
             let batch = [];
             if (Array.isArray(batchResult)) {
               batch = batchResult;
@@ -6298,19 +6360,13 @@ function prosesCheckoutReturFinal() {
             } else if (batchResult && Array.isArray(batchResult.result)) {
               batch = batchResult.result;
             } else if (batchResult && Array.isArray(batchResult.items)) {
-              // GAS getBarangBatch mengembalikan {offset, limit, total, items:[...]}.
               batch = batchResult.items;
             } else if (batchResult && batchResult.data && Array.isArray(batchResult.data.items)) {
               batch = batchResult.data.items;
             }
 
-            // Jika API batch pada deployment GAS lama belum mengembalikan
-            // data dengan format yang benar, gunakan getBarang() sebagai
-            // fallback untuk dataset kecil. Ini menjaga sinkronisasi tetap
-            // berjalan sekarang tanpa mengorbankan mode batch untuk data besar.
             if (!batch.length && offset === 0 && totalBarang <= 5000) {
               if (txt) txt.innerHTML = '<b style="color:#d97706;">API batch belum mengembalikan data. Menggunakan mode kompatibilitas...</b>';
-              // PASTIKAN [branchId] DIKIRIMKAN DI DALAM ARRAY
               const fallbackData = await gasCall('getBarang', [branchId]);
               if (Array.isArray(fallbackData) && fallbackData.length) {
                 batch = fallbackData;
@@ -6318,14 +6374,12 @@ function prosesCheckoutReturFinal() {
                 batch = fallbackData.data;
               }
               if (batch.length) {
-                // Fallback mengambil seluruh Master Barang sekaligus.
-                // Batasi hanya untuk dataset kecil agar tetap aman untuk 100k+.
                 offset = totalBarang;
               }
             }
 
             if (!batch.length && offset < totalBarang) {
-              throw new Error('Batch Master Barang kosong pada posisi '+offset+' padahal total sumber '+totalBarang+'. Pastikan versi Web App GAS yang berisi getBarangBatch sudah di-deploy ulang.');
+              throw new Error('Batch Master Barang kosong pada posisi '+offset+' padahal total sumber '+totalBarang+'.');
             }
 
             const validBatch = [];
@@ -6338,9 +6392,6 @@ function prosesCheckoutReturFinal() {
                 return;
               }
               seenBarangIds.add(id);
-              // Normalisasi key sebelum masuk IndexedDB. Ini mencegah
-              // perbedaan tipe (angka vs teks) dari membuat kunci yang
-              // terlihat berbeda di GAS tetapi bertabrakan di IndexedDB.
               const normalizedItem = Object.assign({}, item, { id_barang: id });
               validBatch.push(normalizedItem);
             });
@@ -6355,7 +6406,6 @@ function prosesCheckoutReturFinal() {
               (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
           }
 
-          // 2) Data lain tetap satu kali panggil karena ukurannya jauh lebih kecil.
           for (let i=0; i<normalTasks.length; i++) {
             const storeName = normalTasks[i][0];
             const fnName = normalTasks[i][1];
@@ -6369,90 +6419,46 @@ function prosesCheckoutReturFinal() {
             if (btn) btn.innerText = '⏳ '+Math.min(95,pct)+'%';
           }
 
-          // 3) Verifikasi jumlah lokal setelah seluruh proses.
-          // totalBarang = jumlah baris data di sheet, sedangkan batch
-          // hanya mengirim baris yang memiliki id_barang. Baris kosong
-          // tidak boleh dianggap sebagai data yang wajib masuk IndexedDB.
-          const expected = {
-            masterBarang: receivedUniqueBarang,
-            supplier: null,
-            promo: null,
-            stokMasuk: null,
-            returBarang: null,
-            riwayatPenjualan: null,
-            cabang: null
-          };
           const verify = {};
           for (const name of Object.keys(dbStores)) {
             verify[name] = await getLocalStoreCount(name);
           }
-          if (verify.masterBarang !== expected.masterBarang) {
+          if (verify.masterBarang !== receivedUniqueBarang) {
             throw new Error(
               'Verifikasi Master Barang gagal: lokal '+verify.masterBarang+
-              ', data valid diterima '+expected.masterBarang+
-              ' (total baris sumber '+totalBarang+').'
+              ', data valid diterima '+receivedUniqueBarang+'.'
             );
           }
+		  
+          const counts = await Promise.all(Object.keys(dbStores).map(async function(name) {
+            return { name: name, count: await getLocalStoreCount(name) };
+          }));
 
-          const now = new Date();
-          const timeString = now.toLocaleString('id-ID', {
-            day:'2-digit', month:'2-digit', year:'numeric',
-            hour:'2-digit', minute:'2-digit', second:'2-digit'
-          }).replace(/:/g,'.');
-          localStorage.setItem('aspos_last_sync', timeString);
-          localStorage.setItem('aspos_last_sync_epoch', String(Date.now()));
-          localStorage.setItem('aspos_master_branch', String(currentUser ? currentUser.id_cabang : ''));
-
-          if (btn) {
-            btn.innerText = '✅ 100% Selesai';
-            btn.style.backgroundColor = '#10b981';
-            btn.style.borderColor = '#10b981';
-          }
+          const nowStr = new Date().toLocaleString('id-ID');
+          localStorage.setItem('aspos_last_sync', nowStr);
+          asposSyncInProgress = false;
+          if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
           if (txt) {
-            txt.innerHTML =
-              '<b style="color:#00a65a;">✅ Sinkronisasi berhasil dan sudah diverifikasi.</b><br>' +
-              'Master Barang: <b>'+verify.masterBarang.toLocaleString('id-ID')+'</b><br>' +
-              'Supplier: <b>'+verify.supplier.toLocaleString('id-ID')+'</b> • ' +
-              'Promo: <b>'+verify.promo.toLocaleString('id-ID')+'</b><br>' +
-              'Stok Masuk: <b>'+verify.stokMasuk.toLocaleString('id-ID')+'</b> • ' +
-              'Retur: <b>'+verify.returBarang.toLocaleString('id-ID')+'</b> • ' +
-              'Penjualan: <b>'+verify.riwayatPenjualan.toLocaleString('id-ID')+'</b> • ' +
-              'Cabang: <b>'+verify.cabang.toLocaleString('id-ID')+'</b><br>' +
-              '<span style="color:#087f8c;">Terakhir sinkron: '+timeString+'</span>';
+            txt.innerHTML = '<b style="color:#00a65a;">Sinkronisasi Selesai!</b><br>' +
+              'Data berhasil diperbarui dari Google Sheets pada ' + nowStr;
           }
-
-          asposSyncInProgress = false;
-
-          // Sinkronisasi data master dan pengiriman antrean transaksi adalah dua proses berbeda.
-          // Setelah pengambilan data berhasil, coba kirim transaksi lokal yang masih PENDING.
-          // Antrean hanya akan hilang jika GAS mengembalikan nomor nota server yang valid.
-          Promise.resolve()
-            .then(function() { return syncPendingTransactions(); })
-            .then(function() { updateOfflineTransactionStatus(); })
-            .catch(function(err) {
-              console.warn('[AS-Pos] Pengiriman antrean transaksi setelah sinkronisasi data gagal:', err);
-              updateOfflineTransactionStatus();
-            });
-
-          setTimeout(function(){
-            if (btn) {
-              btn.disabled = false;
-              btn.innerText = '🔄 Sinkronkan Data';
-              btn.style.backgroundColor = '';
-              btn.style.borderColor = '';
-            }
-          }, 2500);
-        } catch(err) {
-          asposSyncInProgress = false;
-          console.error('[AS-Pos] sync', err);
-          if (btn) {
-            btn.disabled = false;
-            btn.innerText = '❌ Sinkronisasi Gagal';
-            btn.style.backgroundColor = '#dc3545';
+          if (!autoMode) {
+            alert('Sinkronisasi data berhasil diselesaikan!');
           }
-          if (txt) txt.innerHTML = '<span style="color:#dc3545;"><b>Sinkronisasi gagal:</b> '+String(err && err.message ? err.message : err)+'</span>';
-          if (!autoMode) alert('Gagal Sinkronisasi:\n\n' + (err && err.message ? err.message : err));
-          setTimeout(function(){ if(btn){ btn.innerText='🔄 Sinkronkan Data'; btn.style.backgroundColor=''; btn.style.borderColor=''; } },3000);
+          if (typeof loadBarang === 'function') loadBarang();
+          if (typeof checkLocalDbStatus === 'function') checkLocalDbStatus();
+
+        } catch (err) {
+          asposSyncInProgress = false;
+          if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
+          console.error('[AS-Pos] Sync error:', err);
+          if (txt) {
+            txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Sinkronisasi gagal: ' + 
+              (err && err.message ? err.message : String(err)) + '</span>';
+          }
+          if (!autoMode) {
+            alert('Gagal melakukan sinkronisasi:\n\n' + (err && err.message ? err.message : String(err)));
+          }
         }
       });
     };
@@ -6691,7 +6697,7 @@ function prosesCheckoutReturFinal() {
 
     function asposEnsureIndexedDB() {
       return new Promise(function(resolve) {
-        initIndexedDB(function(ok) { resolve(!!ok && !!db); });
+        initIndexedDB(function(ok) { if(ok) window.__asposDbConnection=db; resolve(!!ok && !!db); });
       });
     }
 
@@ -6738,70 +6744,107 @@ function prosesCheckoutReturFinal() {
     // ------------------------------------------------------------
     // 1. PERCEPAT KASIR (POS) & RETUR POS (TANPA LOADING BERULANG)
     // ------------------------------------------------------------
+
+    // Kompensasi stok untuk transaksi penjualan offline yang masih PENDING.
+    async function applyPendingStockDeductions_(serverBarangList, branchId) {
+      try {
+        var ready=await asposEnsureIndexedDB();
+        if(!ready) return serverBarangList||[];
+        var pending=await getAllFromStore('pendingTransactions');
+        var pendingReturns=await getAllFromStore('pendingReturTukar').catch(function(){return [];});
+        var branch=String(branchId||'');
+        var qtyDeltaMap={};
+        // Penjualan PENDING mengurangi stok lokal.
+        (pending||[]).forEach(function(trx){
+          if(!trx || String(trx.status||'').toUpperCase()!=='PENDING') return;
+          if(branch && String(trx.id_cabang||trx.idCabang||'')!==branch) return;
+          var items=Array.isArray(trx.items)?trx.items:(Array.isArray(trx.detail)?trx.detail:[]);
+          items.forEach(function(it){
+            var id=String(it.id_barang||'').trim(), qty=Number(it.qty)||0;
+            if(id && qty>0) qtyDeltaMap[id]=(qtyDeltaMap[id]||0)-qty;
+          });
+        });
+        // Retur PENDING menambah stok; barang pengganti/beli mengurangi stok.
+        (pendingReturns||[]).forEach(function(trx){
+          if(!trx || String(trx.status||'').toUpperCase()!=='PENDING') return;
+          if(branch && String(trx.id_cabang||trx.idCabang||'')!==branch) return;
+          (Array.isArray(trx.items)?trx.items:[]).forEach(function(it){
+            var id=String(it.id_barang||'').trim(), qty=Number(it.qty)||0;
+            if(!id || qty<=0) return;
+            qtyDeltaMap[id]=(qtyDeltaMap[id]||0)+(String(it.mode||'retur').toLowerCase()==='retur'?qty:-qty);
+          });
+        });
+        return (serverBarangList||[]).map(function(item){
+          var id=String(item.id_barang||'').trim(), delta=qtyDeltaMap[id]||0;
+          if(!delta) return item;
+          return Object.assign({},item,{stok:Math.max(0,(Number(item.stok)||0)+delta)});
+        });
+      }catch(err){
+        console.warn('[AS-Pos] Gagal menghitung antrean stok offline:',err);
+        return serverBarangList||[];
+      }
+    }
+
     window.loadPosKatalog = async function(forceRefresh) {
-      let searchEl = document.getElementById("searchPosMobile");
-      if (searchEl) searchEl.value = "";
-
-      let branchId = currentUser ? currentUser.id_cabang : "";
-      if (isOwner() && document.getElementById("posPilihCabang")) {
-        branchId = document.getElementById("posPilihCabang").value;
+      var searchEl=document.getElementById("searchPosMobile");
+      if(searchEl) searchEl.value="";
+      var branchId=currentUser?String(currentUser.id_cabang||''):'';
+      if(typeof isOwner==='function' && isOwner()){
+        // ID dropdown yang benar pada UI POS V3.1 adalah posPilihCabang.
+        // pos_branch_filter tetap didukung sebagai alias bila dipakai pada varian UI lain.
+        var branchEl=document.getElementById("posPilihCabang") || document.getElementById("pos_branch_filter");
+        if(branchEl && branchEl.value) branchId=String(branchEl.value).trim();
+        else branchId=String(localStorage.getItem('aspos_selected_branch')||'').trim();
       }
-      if (isOwner() && !branchId) {
-        document.getElementById("posProductList").innerHTML =
-          `<div style="text-align:center; padding:20px; color:#dc3545; font-size:14px; font-weight:bold;">Silakan pilih cabang transaksi terlebih dahulu dari menu di atas.</div>`;
-        return;
+      console.log('[AS-Pos] Memuat katalog untuk cabang:', branchId);
+      if(typeof isOwner==='function' && isOwner() && !branchId){
+        var listEl=document.getElementById("posProductList");
+        if(listEl) listEl.innerHTML='<div style="text-align:center;padding:20px;color:#dc3545;font-size:14px;font-weight:bold;">Silakan pilih cabang transaksi terlebih dahulu dari menu di atas.</div>';
+        return [];
       }
-
-      const cacheKey = 'aspos_catalog_branch_' + String(branchId || 'GLOBAL');
-      let cached = asposReadBranchCatalogCache(branchId);
-
-      // Fallback ke IndexedDB masterBarang jika cache cabang belum ada
-      if (!cached || !cached.length) {
-        const ready = await asposEnsureIndexedDB();
-        if (ready) {
-          const idbItems = await getAllFromStore('masterBarang');
-          const savedBranch = String(localStorage.getItem('aspos_master_branch') || '');
-          if (idbItems.length && (!branchId || savedBranch === String(branchId))) {
-            cached = idbItems;
-            asposSaveBranchCatalogCache(branchId, cached);
+      var cacheKey='aspos_catalog_branch_'+String(branchId||'GLOBAL');
+      var cached=asposReadBranchCatalogCache(branchId);
+      var ready=await asposEnsureIndexedDB();
+      if(!cached || !cached.length){
+        if(ready){
+          var idbItems=await getAllFromStore('masterBarang').catch(function(){return [];});
+          var savedBranch=String(localStorage.getItem('aspos_master_branch')||'');
+          if(idbItems.length && savedBranch===String(branchId||'')){
+            cached=idbItems; asposSaveBranchCatalogCache(branchId,cached);
           }
         }
       }
-
-      // Render SEKETIKA jika data lokal tersedia
-      if (cached && cached.length) {
-        globalDataBarang = cached;
-        renderPosSuppliers();
-        renderPosProductList();
-        if (!forceRefresh && asposIsMemFresh(cacheKey)) return;
+      if(cached && cached.length){
+        globalDataBarang=cached;
+        renderPosSuppliers(); renderPosProductList();
+        if(!forceRefresh && asposIsMemFresh(cacheKey)) return cached;
       } else {
-        document.getElementById("posProductList").innerHTML =
-          `<div style="text-align:center; padding:20px; color:#6c757d;">Memuat katalog barang...</div>`;
+        var list=document.getElementById("posProductList");
+        if(list) list.innerHTML='<div style="text-align:center;padding:20px;color:#6c757d;">Memuat katalog barang...</div>';
       }
-
-      if (!asposIsOnline()) {
-        if (!cached || !cached.length) {
-          document.getElementById("posProductList").innerHTML =
-            `<div style="text-align:center; padding:20px; color:#dc3545;">Mode Offline: Katalog cabang ini belum tersimpan di perangkat.</div>`;
+      if(!asposIsOnline()){
+        if(!cached || !cached.length){
+          var offlineList=document.getElementById("posProductList");
+          if(offlineList) offlineList.innerHTML='<div style="text-align:center;padding:20px;color:#dc3545;">Mode Offline: Katalog cabang ini belum tersimpan di perangkat.</div>';
         }
-        return;
+        return cached||[];
       }
-
-      // Refresh latar belakang (tanpa menghapus tampilan yang sudah muncul)
-      asposCallGasLocalFirst('getBarang', [branchId]).then(async function(data) {
-        if (!Array.isArray(data)) return;
-        globalDataBarang = data;
-        asposSaveBranchCatalogCache(branchId, data);
-        const ready = await asposEnsureIndexedDB();
-        if (ready) {
-          await replaceStore('masterBarang', data);
-          localStorage.setItem('aspos_master_branch', String(branchId || ''));
+      try{
+        var serverData=await asposCallGasLocalFirst('getBarang',[branchId]);
+        if(!Array.isArray(serverData)) return cached||[];
+        var safeData=await applyPendingStockDeductions_(serverData,branchId);
+        globalDataBarang=safeData;
+        asposSaveBranchCatalogCache(branchId,safeData);
+        if(ready){
+          await replaceStore('masterBarang',safeData);
+          localStorage.setItem('aspos_master_branch',String(branchId||''));
         }
-        renderPosSuppliers();
-        renderPosProductList();
-      }).catch(function(err) {
-        console.warn('[AS-Pos] Refresh katalog background gagal (pakai cache lokal):', err);
-      });
+        renderPosSuppliers(); renderPosProductList();
+        return safeData;
+      }catch(err){
+        console.warn('[AS-Pos] Refresh katalog gagal; menggunakan cache lokal:',err);
+        return cached||[];
+      }
     };
 
     window.initReturPos = async function(forceRefresh) {
@@ -6901,8 +6944,10 @@ function prosesCheckoutReturFinal() {
 
       updateOfflineTransactionStatus();
       if (asposIsOnline()) syncPendingTransactions();
+      await window.checkLocalDbStatus();
       return { no_nota: localNoNota, clientTransactionId: clientTransactionId };
     }
+    window.saveReturTukarLocalFirst = saveReturTukarLocalFirst;
 
     // Override syncOnePendingTransaction agar mendukung PENJUALAN & RETUR_TUKAR
     window.syncOnePendingTransaction = async function(item) {
@@ -7248,11 +7293,123 @@ function prosesCheckoutReturFinal() {
     }
     window.loadRiwayat = asposLoadRiwayatLocalFirst;
 
+
+    // Status database dan penyimpanan retur/tukar didefinisikan satu kali pada local-first engine di atas.
+
+    // Sinkronisasi manual utama didefinisikan satu kali pada blok IndexedDB utama.
+
+    window.backupIndexedDB = async function() {
+      var ready=await asposEnsureIndexedDB();
+      if(!ready) throw new Error('Database lokal tidak tersedia.');
+      var storeNames=Object.keys(dbStores);
+      var backup={format:'ASPOS_LOCAL_BACKUP',version:1,exportedAt:new Date().toISOString(),stores:{}};
+      for(var i=0;i<storeNames.length;i++){
+        backup.stores[storeNames[i]]=await getAllFromStore(storeNames[i]);
+      }
+      var blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+      var url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='ASPOS-Backup-'+new Date().toISOString().slice(0,10)+'.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      return true;
+    };
+
+    window.restoreIndexedDB = async function(fileInput) {
+      var file=fileInput&&fileInput.files?fileInput.files[0]:null;
+      if(!file) return false;
+      var parsed=JSON.parse(await file.text());
+      if(!parsed || !parsed.stores || typeof parsed.stores!=='object') throw new Error('Format file backup tidak valid.');
+      var ready=await asposEnsureIndexedDB();
+      if(!ready) throw new Error('Database lokal tidak tersedia.');
+      var names=Object.keys(parsed.stores).filter(function(n){return dbStores[n] && Array.isArray(parsed.stores[n]);});
+      for(var i=0;i<names.length;i++){
+        await new Promise(function(resolve,reject){
+          try{
+            var tx=db.transaction(names[i],'readwrite'), store=tx.objectStore(names[i]);
+            store.clear();
+            parsed.stores[names[i]].forEach(function(row){
+              if(row && row[dbStores[names[i]]]!==undefined) store.put(row);
+            });
+            tx.oncomplete=function(){resolve(true);};
+            tx.onerror=function(){reject(tx.error||new Error('Restore '+names[i]+' gagal.'));};
+            tx.onabort=function(){reject(tx.error||new Error('Restore '+names[i]+' dibatalkan.'));};
+          }catch(e){reject(e);}
+        });
+      }
+      await window.checkLocalDbStatus();
+      if(typeof window.loadPosKatalog==='function') await window.loadPosKatalog(true);
+      alert('Restore database lokal berhasil.');
+      return true;
+    };
+
+    window.bukaModalEditItemRetur=function(index){
+      var modal=document.getElementById('modalKeranjangRetur');
+      if(!modal) return;
+      modal.dataset.editIndex=String(index);
+      modal.classList.remove('hidden'); modal.style.display='flex';
+    };
+    window.tutupModalKeranjangRetur=function(){
+      var modal=document.getElementById('modalKeranjangRetur');
+      if(modal){modal.classList.add('hidden');modal.style.display='none';}
+    };
+    window.openCabangModal=function(){
+      var modal=document.getElementById('modalCabang');
+      if(modal){modal.classList.remove('hidden');modal.style.display='flex';}
+    };
+    window.closeCabangModal=function(){
+      var modal=document.getElementById('modalCabang');
+      if(modal){modal.classList.add('hidden');modal.style.display='none';}
+    };
+
     // Jalankan audit otomatis ringan 5 detik setelah aplikasi siap jika online
     setTimeout(function() {
       updateOfflineTransactionStatus();
       if (asposIsOnline()) syncPendingTransactions();
     }, 5000);
   </script>
+
+<!-- Modal detail keranjang retur/tukar POS -->
+<div id="modalKeranjangRetur" class="hidden" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:520px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:17px;">Detail Item Retur / Tukar</h3>
+      <button type="button" onclick="tutupModalKeranjangRetur()" style="border:0;background:none;font-size:24px;cursor:pointer;">&times;</button>
+    </div>
+    <div id="returCartList" style="font-size:13px;color:#475569;max-height:42vh;overflow-y:auto;padding:2px 1px;">
+      <div style="text-align:center;padding:20px;color:#94a3b8;">Keranjang retur kosong.</div>
+    </div>
+    <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:grid;gap:8px;font-size:13px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;"><span>Total nilai retur (masuk stok)</span><strong id="modalReturTotalMin">Rp 0</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;"><span>Total barang pengganti (keluar stok)</span><strong id="modalReturTotalPlus">Rp 0</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;font-weight:700;"><span id="modalLabelStatusSelisih">Selisih Pembayaran:</span><strong id="modalReturGrandTotal">Rp 0</strong></div>
+    </div>
+    <div style="margin-top:14px;">
+      <label for="returMetodeBayar" style="display:block;font-size:12px;font-weight:600;margin-bottom:5px;">Metode pembayaran selisih</label>
+      <select id="returMetodeBayar" class="form-control">
+        <option value="TUNAI">Tunai</option><option value="TRANSFER">Transfer</option><option value="QRIS">QRIS</option><option value="DEBIT">Debit</option>
+      </select>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-outline" onclick="tutupModalKeranjangRetur()">Tutup</button>
+      <button type="button" class="btn btn-primary" onclick="prosesCheckoutReturFinal()" style="background:#dc3545;border-color:#dc3545;">PROSES RETUR &amp; CETAK NOTA</button>
+    </div>
+  </div>
+</div>
+<!-- Modal pilih cabang aktif untuk OWNER -->
+<div id="modalCabang" class="hidden" style="display:none;position:fixed;inset:0;z-index:11001;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:420px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:17px;">Pilih Cabang Aktif</h3>
+      <button type="button" onclick="closeCabangModal()" style="border:0;background:none;font-size:24px;cursor:pointer;">&times;</button>
+    </div>
+    <label for="selectCabangAktif" style="display:block;font-size:13px;margin-bottom:6px;">Cabang Operasional</label>
+    <select id="selectCabangAktif" class="form-control"></select>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+      <button type="button" class="btn btn-outline" onclick="closeCabangModal()">Batal</button>
+      <button type="button" class="btn btn-primary" onclick="(function(){var s=document.getElementById('selectCabangAktif');if(!s||!s.value){alert('Pilih cabang terlebih dahulu.');return;}localStorage.setItem('aspos_selected_branch',s.value);var p=document.getElementById('posPilihCabang');if(p)p.value=s.value;closeCabangModal();if(window.loadPosKatalog)window.loadPosKatalog(true);})()">Terapkan</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
