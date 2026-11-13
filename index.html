@@ -5891,8 +5891,61 @@ function prosesCheckoutReturFinal() {
       return 'TRX-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10).toUpperCase();
     }
 
+    // navigator.onLine pada Android WebView dapat tetap true meskipun internet terputus.
+    // Status titik koneksi karena itu memakai pemeriksaan jaringan nyata, bukan flag browser saja.
+    window.__asposNetworkReachable = (navigator.onLine === false) ? false : null;
+    window.__asposNetworkProbeRunning = false;
+    window.__asposNetworkProbeAt = 0;
+
     function asposIsOnline() {
-      return navigator.onLine !== false;
+      return navigator.onLine !== false && window.__asposNetworkReachable === true;
+    }
+
+    async function asposRefreshNetworkStatus(force) {
+      if (navigator.onLine === false) {
+        window.__asposNetworkReachable = false;
+        if (typeof updateOfflineTransactionStatus === 'function') updateOfflineTransactionStatus();
+        return false;
+      }
+      if (window.__asposNetworkProbeRunning) return asposIsOnline();
+      if (!force && Date.now() - Number(window.__asposNetworkProbeAt || 0) < 10000) return asposIsOnline();
+
+      window.__asposNetworkProbeRunning = true;
+      window.__asposNetworkProbeAt = Date.now();
+      var wasOnline = window.__asposNetworkReachable === true;
+      var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timeoutId = null;
+      try {
+        var ping = fetch('https://www.gstatic.com/generate_204?aspos_ping=' + Date.now(), {
+          method: 'GET',
+          mode: 'no-cors',
+          cache: 'no-store',
+          credentials: 'omit',
+          signal: controller ? controller.signal : undefined
+        });
+        var timeout = new Promise(function(_, reject) {
+          timeoutId = setTimeout(function() {
+            if (controller) controller.abort();
+            reject(new Error('Pemeriksaan koneksi timeout'));
+          }, 5000);
+        });
+        await Promise.race([ping, timeout]);
+        window.__asposNetworkReachable = true;
+      } catch (err) {
+        window.__asposNetworkReachable = false;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+        window.__asposNetworkProbeRunning = false;
+      }
+
+      var isNowOnline = asposIsOnline();
+      if (wasOnline !== isNowOnline || force) {
+        if (typeof updateOfflineTransactionStatus === 'function') updateOfflineTransactionStatus();
+      }
+      if (isNowOnline && !wasOnline && typeof syncPendingTransactions === 'function') {
+        syncPendingTransactions();
+      }
+      return isNowOnline;
     }
 
     function asposLocalTransactionNo(id) {
@@ -6290,15 +6343,21 @@ function prosesCheckoutReturFinal() {
     };
 
     window.addEventListener('online', function() {
-      updateOfflineTransactionStatus();
-      syncPendingTransactions();
+      // Event online hanya memicu pemeriksaan; bukan bukti internet sudah tersedia.
+      asposRefreshNetworkStatus(true);
     });
-    window.addEventListener('offline', updateOfflineTransactionStatus);
-    setInterval(function() {
+    window.addEventListener('offline', function() {
+      window.__asposNetworkReachable = false;
       updateOfflineTransactionStatus();
+    });
+    // Periksa koneksi berkala agar titik APK berubah merah saat internet benar-benar putus,
+    // meskipun Android WebView masih melaporkan navigator.onLine = true.
+    setInterval(function() {
+      asposRefreshNetworkStatus(true);
       if (typeof window.checkLocalDbStatus === 'function') window.checkLocalDbStatus();
-      if (asposIsOnline()) syncPendingTransactions();
-    }, 60000);
+    }, 15000);
+    // Pemeriksaan awal saat aplikasi dibuka.
+    setTimeout(function() { asposRefreshNetworkStatus(true); }, 300);
 
     function getLocalStoreCount(storeName) {
       return new Promise(function(resolve, reject) {
