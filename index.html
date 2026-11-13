@@ -6932,11 +6932,6 @@ function prosesCheckoutReturFinal() {
         cachedRecord=await asposReadBranchCatalogCache(branchId);
         if(cachedRecord && Array.isArray(cachedRecord.items)) cached=cachedRecord.items;
       }
-      // Kompatibilitas dengan cache versi sebelumnya dan masterBarang cabang aktif.
-      if(!cached || !cached.length) {
-        var legacy=await asposReadBranchCatalogCache(branchId);
-        if(legacy && Array.isArray(legacy.items) && legacy.items.length) cached=legacy.items;
-      }
       if(!cached || !cached.length) {
         if(ready) {
           var idbItems=await getAllFromStore('masterBarang').catch(function(){return [];});
@@ -7008,13 +7003,16 @@ function prosesCheckoutReturFinal() {
       updateModeReturUI();
 
       const cacheKey = 'aspos_catalog_branch_' + String(branchId || 'GLOBAL');
-      let cached = asposReadBranchCatalogCache(branchId);
-      if (cached && cached.length) {
+      await asposEnsureIndexedDB();
+      const cachedRecord = await asposReadBranchCatalogCache(branchId);
+      const cached = cachedRecord && Array.isArray(cachedRecord.items) ? cachedRecord.items : [];
+      if (cached.length) {
         globalDataBarang = cached;
         renderReturSuppliers();
         renderReturProductList();
         renderKeranjangRetur();
-        if (!forceRefresh && asposIsMemFresh(cacheKey)) return;
+        const savedAt = Number(cachedRecord.savedAt || 0);
+        if (!forceRefresh && savedAt && Date.now() - savedAt < ASPOS_CACHE_TTL_MS) return;
       }
 
       if (!asposIsOnline()) return;
