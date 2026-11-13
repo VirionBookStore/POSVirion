@@ -6832,96 +6832,8 @@ function prosesCheckoutReturFinal() {
       });
     };
 
-    window.restoreIndexedDB = function() {
-      const fileInput = document.getElementById('fileRestore');
-      const btn = document.getElementById('btnRestore');
-      const statusEl = document.getElementById('txtDbStatus');
+    // Restore tunggal didefinisikan pada local-first engine di bawah.
 
-      if (!fileInput || !fileInput.files || !fileInput.files.length) {
-        alert('Pilih file backup (.json) terlebih dahulu!');
-        return;
-      }
-
-      if(btn) { btn.innerText='⏳ Membaca file...'; btn.disabled=true; }
-
-      const file = fileInput.files[0];
-      const reader = new FileReader();
-
-      reader.onerror = function(){
-        if(btn) { btn.innerText='Restore Data'; btn.disabled=false; }
-        alert('File backup tidak dapat dibaca.');
-      };
-
-      reader.onload = function(event) {
-        try {
-          const importedData = JSON.parse(event.target.result);
-          const names = Object.keys(dbStores);
-          const missing = names.filter(function(name){ return !Array.isArray(importedData[name]); });
-          if (missing.length) throw new Error('Backup tidak lengkap. Data yang tidak ditemukan: '+missing.join(', '));
-
-          const meta = importedData._meta || {};
-          if (meta.app && meta.app !== 'AS-Pos') throw new Error('File bukan backup AS-Pos.');
-          
-          initIndexedDB(async function(success) {
-            if (!success || !db) {
-              if(btn) { btn.innerText='Restore Data'; btn.disabled=false; }
-              alert('Database lokal tidak dapat dibuka.');
-              return;
-            }
-
-            try {
-              const sourceCounts = {};
-              names.forEach(function(name){ sourceCounts[name] = importedData[name].length; });
-
-              for (let i=0; i<names.length; i++) {
-                const name = names[i];
-                const result = await replaceStore(name, importedData[name]);
-                if(result.skipped) {
-                  throw new Error(name+': '+result.skipped+' record dilewati karena key kosong.');
-                }
-                if(btn) btn.innerText='⏳ Restore '+Math.round((i+1)/names.length*90)+'%';
-              }
-
-              const actualCounts = {};
-              for (const name of names) actualCounts[name] = await getLocalStoreCount(name);
-
-              const mismatch = names.filter(function(name){ return actualCounts[name] !== sourceCounts[name]; });
-              if (mismatch.length) {
-                throw new Error('Verifikasi restore gagal pada: '+mismatch.join(', '));
-              }
-
-              if(btn) btn.innerText='✅ Restore terverifikasi';
-              if(statusEl) {
-                statusEl.innerHTML =
-                  '<b style="color:#00a65a;">✅ Restore berhasil dan sudah diverifikasi.</b><br>' +
-                  'Master Barang: <b>'+actualCounts.masterBarang.toLocaleString('id-ID')+'</b> • ' +
-                  'Supplier: <b>'+actualCounts.supplier.toLocaleString('id-ID')+'</b><br>' +
-                  'Promo: <b>'+actualCounts.promo.toLocaleString('id-ID')+'</b> • ' +
-                  'Stok Masuk: <b>'+actualCounts.stokMasuk.toLocaleString('id-ID')+'</b><br>' +
-                  'Retur: <b>'+actualCounts.returBarang.toLocaleString('id-ID')+'</b> • ' +
-                  'Penjualan: <b>'+actualCounts.riwayatPenjualan.toLocaleString('id-ID')+'</b>';
-              }
-              setTimeout(function(){
-                if(btn) { btn.innerText='Restore Data'; btn.disabled=false; }
-              },2500);
-              fileInput.value='';
-            } catch(err) {
-              console.error('[AS-Pos] restore', err);
-              if(btn) { btn.innerText='❌ Restore Gagal'; btn.disabled=false; }
-              if(statusEl) statusEl.innerHTML = '<span style="color:#dc3545;"><b>Restore gagal:</b> '+String(err && err.message ? err.message : err)+'</span>';
-              alert('Gagal Restore:\n\n' + (err && err.message ? err.message : err));
-              setTimeout(function(){ if(btn){ btn.innerText='Restore Data'; btn.style.backgroundColor=''; } },2500);
-            }
-          });
-        } catch(e) {
-          if(btn) { btn.innerText='Restore Data'; btn.disabled=false; }
-          alert('File backup tidak valid atau rusak.\n\n'+e.message);
-        }
-      };
-      reader.readAsText(file);
-    };
-
-  
    // ============================================================
     // LOCAL-FIRST ENGINE v8: CACHE INSTAN, OFFLINE MODE, & AUDIT
     // ============================================================
@@ -7687,32 +7599,144 @@ function prosesCheckoutReturFinal() {
       }
     };
 
-    window.restoreIndexedDB = async function(fileInput) {
-      var file=fileInput&&fileInput.files?fileInput.files[0]:null;
-      if(!file) return false;
-      var parsed=JSON.parse(await file.text());
-      if(!parsed || !parsed.stores || typeof parsed.stores!=='object') throw new Error('Format file backup tidak valid.');
-      var ready=await asposEnsureIndexedDB();
-      if(!ready) throw new Error('Database lokal tidak tersedia.');
-      var names=Object.keys(parsed.stores).filter(function(n){return dbStores[n] && Array.isArray(parsed.stores[n]);});
-      for(var i=0;i<names.length;i++){
-        await new Promise(function(resolve,reject){
-          try{
-            var tx=db.transaction(names[i],'readwrite'), store=tx.objectStore(names[i]);
-            store.clear();
-            parsed.stores[names[i]].forEach(function(row){
-              if(row && row[dbStores[names[i]]]!==undefined) store.put(row);
-            });
-            tx.oncomplete=function(){resolve(true);};
-            tx.onerror=function(){reject(tx.error||new Error('Restore '+names[i]+' gagal.'));};
-            tx.onabort=function(){reject(tx.error||new Error('Restore '+names[i]+' dibatalkan.'));};
-          }catch(e){reject(e);}
-        });
+    // RESTORE BACKUP LOCAL-FIRST: tidak memanggil GAS atau sinkronisasi.
+    // Mendukung format baru { _meta, stores:{...} } dan format lama { storeName:[...] }.
+    window.restoreIndexedDB = function(fileInput) {
+      var input = fileInput && fileInput.files ? fileInput : document.getElementById('fileRestore');
+      var file = input && input.files && input.files[0];
+      var btn = document.getElementById('btnRestore');
+      var statusEl = document.getElementById('txtDbStatus');
+
+      if (!file) {
+        alert('Pilih file backup (.json) terlebih dahulu!');
+        return Promise.resolve(false);
       }
-      await window.checkLocalDbStatus();
-      if(typeof window.loadPosKatalog==='function') await window.loadPosKatalog(true);
-      alert('Restore database lokal berhasil.');
-      return true;
+      if (btn) { btn.disabled = true; btn.innerText = '⏳ Membaca backup...'; }
+
+      function setStatus(message, color) {
+        if (statusEl) {
+          statusEl.textContent = message;
+          statusEl.style.color = color || '#64748b';
+        }
+      }
+      function finishButton(label) {
+        if (btn) { btn.disabled = false; btn.innerText = label || 'Restore Data'; }
+      }
+
+      return new Promise(function(resolve) {
+        var reader = new FileReader();
+        reader.onerror = function() {
+          finishButton('Restore Data');
+          setStatus('File backup tidak dapat dibaca.', '#dc3545');
+          alert('File backup tidak dapat dibaca.');
+          resolve(false);
+        };
+        reader.onload = async function(event) {
+          try {
+            var parsed = JSON.parse(event.target.result);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+              throw new Error('Isi file backup bukan objek JSON yang valid.');
+            }
+            var meta = parsed._meta || {};
+            if (meta.app && String(meta.app).toLowerCase() !== 'as-pos') {
+              throw new Error('File ini bukan backup AS-POS.');
+            }
+
+            var sourceStores = parsed.stores && typeof parsed.stores === 'object'
+              ? parsed.stores : parsed;
+            var names = Object.keys(dbStores);
+            var missing = names.filter(function(name) {
+              return !Array.isArray(sourceStores[name]);
+            });
+            if (missing.length) {
+              throw new Error('Backup tidak lengkap. Tabel tidak ditemukan: ' + missing.join(', '));
+            }
+
+            // Validasi seluruh record SEBELUM database lokal disentuh.
+            var prepared = {};
+            names.forEach(function(name) {
+              var keyPath = dbStores[name];
+              prepared[name] = sourceStores[name];
+              for (var i = 0; i < prepared[name].length; i++) {
+                var row = prepared[name][i];
+                if (!row || typeof row !== 'object' ||
+                    row[keyPath] === undefined || row[keyPath] === null || String(row[keyPath]) === '') {
+                  throw new Error('Data ' + name + ' memiliki record tanpa kunci "' + keyPath +
+                    '" pada baris ' + (i + 1) + '. Restore dibatalkan agar data tidak rusak.');
+                }
+              }
+            });
+
+            if (btn) btn.innerText = '⏳ Membuka database lokal...';
+            var ready = await asposEnsureIndexedDB();
+            if (!ready || !db) throw new Error('Database lokal tidak dapat dibuka.');
+
+            if (btn) btn.innerText = '⏳ Memulihkan data...';
+            // Satu transaksi readwrite untuk semua tabel: semua tabel berhasil bersama-sama
+            // atau seluruh transaksi dibatalkan. Tidak ada pemanggilan GAS/sinkronisasi.
+            await new Promise(function(resolveTx, rejectTx) {
+              var tx;
+              try {
+                tx = db.transaction(names, 'readwrite');
+                names.forEach(function(name) {
+                  var store = tx.objectStore(name);
+                  store.clear();
+                  prepared[name].forEach(function(row) { store.put(row); });
+                });
+              } catch (e) {
+                rejectTx(e);
+                return;
+              }
+              tx.oncomplete = function() { resolveTx(true); };
+              tx.onerror = function() { rejectTx(tx.error || new Error('Transaksi restore gagal.')); };
+              tx.onabort = function() { rejectTx(tx.error || new Error('Transaksi restore dibatalkan.')); };
+            });
+
+            if (btn) btn.innerText = '⏳ Memverifikasi data...';
+            var actualCounts = {};
+            for (var j = 0; j < names.length; j++) {
+              var name = names[j];
+              var rows = await getAllFromStore(name);
+              actualCounts[name] = rows.length;
+              if (actualCounts[name] !== prepared[name].length) {
+                throw new Error('Verifikasi gagal pada ' + name + ': file berisi ' +
+                  prepared[name].length + ', tersimpan ' + actualCounts[name] + '.');
+              }
+            }
+
+            // Buang cache memori lama agar layar berikutnya membaca data hasil restore.
+            if (window.ASPOS_MEM_CACHE) window.ASPOS_MEM_CACHE = {};
+            if (typeof globalDataBarang !== 'undefined') {
+              globalDataBarang = await getAllFromStore('masterBarang');
+            }
+            if (typeof window.checkLocalDbStatus === 'function') {
+              await Promise.resolve(window.checkLocalDbStatus()).catch(function(){});
+            }
+
+            var summary = 'Restore berhasil dan diverifikasi secara lokal.\n' +
+              'Master barang: ' + actualCounts.masterBarang.toLocaleString('id-ID') +
+              '\nSupplier: ' + actualCounts.supplier.toLocaleString('id-ID') +
+              '\nPromo: ' + actualCounts.promo.toLocaleString('id-ID') +
+              '\nStok masuk: ' + actualCounts.stokMasuk.toLocaleString('id-ID') +
+              '\nRetur barang: ' + actualCounts.returBarang.toLocaleString('id-ID') +
+              '\nRiwayat penjualan: ' + actualCounts.riwayatPenjualan.toLocaleString('id-ID') +
+              '\n\nRestore tidak menjalankan sinkronisasi Google Sheets.';
+            setStatus(summary, '#15803d');
+            finishButton('✅ Restore Berhasil');
+            if (input) input.value = '';
+            alert(summary + '\n\nSilakan muat ulang aplikasi agar seluruh menu membaca database hasil restore.');
+            resolve(true);
+          } catch (err) {
+            console.error('[AS-Pos] restore lokal gagal:', err);
+            var message = err && err.message ? err.message : String(err);
+            setStatus('Restore gagal: ' + message, '#dc3545');
+            finishButton('Restore Data');
+            alert('Gagal Restore:\n\n' + message);
+            resolve(false);
+          }
+        };
+        reader.readAsText(file);
+      });
     };
 
     window.bukaModalEditItemRetur=function(index){
