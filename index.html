@@ -6905,6 +6905,9 @@ function prosesCheckoutReturFinal() {
     }
 
     window.loadPosKatalog = async function(forceRefresh) {
+      // Token mencegah respons cabang lama menimpa katalog cabang yang baru dipilih.
+      var requestId = (window.__asposPosCatalogRequestId || 0) + 1;
+      window.__asposPosCatalogRequestId = requestId;
       var searchEl=document.getElementById("searchPosMobile");
       if(searchEl) searchEl.value="";
       var branchId=currentUser?String(currentUser.id_cabang||''):'';
@@ -6968,15 +6971,27 @@ function prosesCheckoutReturFinal() {
         var serverData=await asposCallGasLocalFirst('getBarang',[branchId]);
         if(!Array.isArray(serverData)) return cached||[];
         var safeData=await applyPendingStockDeductions_(serverData,branchId);
-        globalDataBarang=safeData;
+        // Simpan cache cabang meskipun pengguna sudah berpindah ke cabang lain.
         asposSaveBranchCatalogCache(branchId,safeData);
         if(ready) {
-          await replaceStore('masterBarang',safeData);
-          localStorage.setItem('aspos_master_branch',String(branchId||''));
-          // Pastikan record per-cabang selesai tersimpan sebelum fungsi berakhir.
+          await replaceStore('masterBarang',safeData).catch(function(err){
+            console.warn('[AS-Pos] Master aktif gagal diperbarui:',err);
+          });
           await putStore('catalogCabang',{branchId:String(branchId||'GLOBAL'),items:safeData,savedAt:Date.now()}).catch(function(err){
             console.warn('[AS-Pos] Cache cabang belum tersimpan:',err);
           });
+        }
+        // Hanya respons permintaan terbaru boleh mengganti tampilan dan master aktif.
+        if(requestId !== window.__asposPosCatalogRequestId) return safeData;
+        var selectedNow = branchId;
+        if(typeof isOwner==='function' && isOwner()) {
+          var selectedEl=document.getElementById("posPilihCabang") || document.getElementById("pos_branch_filter");
+          if(selectedEl && selectedEl.value) selectedNow=String(selectedEl.value).trim();
+        }
+        if(String(selectedNow) !== String(branchId)) return safeData;
+        globalDataBarang=safeData;
+        if(ready) {
+          localStorage.setItem('aspos_master_branch',String(branchId||''));
         }
         renderPosSuppliers(); renderPosProductList();
         return safeData;
