@@ -7542,6 +7542,10 @@ function prosesCheckoutReturFinal() {
       if (local.length) {
         globalReturData = local;
         filterReturBarang();
+      } else {
+        globalReturData = [];
+        var returBody = document.querySelector("#tabelRetur tbody");
+        if (returBody) returBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;">Belum ada cache riwayat retur di perangkat. Sinkronkan saat online untuk akses offline.</td></tr>';
       }
       if (!asposIsOnline()) return;
       asposCallGasLocalFirst('getReturBarang', []).then(async function(data) {
