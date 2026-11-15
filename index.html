@@ -746,7 +746,7 @@
           <h4 style="margin-top: 0; font-size: 15px;">📤 Restore Data <span style="font-size:10px;color:#64748b;font-weight:600;">DB v1.0</span></h4>
           <p style="font-size: 13px; color: #555;">Pulihkan aplikasi menggunakan file backup (.json) yang pernah didownload.</p>
           <input type="file" id="fileRestore" accept=".json" class="form-control" style="margin-bottom: 10px; font-size: 12px;">
-          <button class="btn btn-danger" id="btnRestore" onclick="restoreIndexedDB()" style="font-weight: bold; width: 100%;">Restore Data</button>
+          <button type="button" class="btn btn-danger" id="btnRestore" onclick="if (typeof window.restoreIndexedDB === 'function') { window.restoreIndexedDB(document.getElementById('fileRestore')); } else { alert('Fungsi Restore belum termuat. Muat ulang aplikasi dan coba lagi.'); console.error('[AS-Pos] window.restoreIndexedDB tidak tersedia'); }" style="font-weight: bold; width: 100%;">Restore Data</button>
         </div>
       </div>
     </div>
