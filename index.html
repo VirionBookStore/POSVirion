@@ -7644,15 +7644,25 @@ function prosesCheckoutReturFinal() {
 
             var sourceStores = parsed.stores && typeof parsed.stores === 'object'
               ? parsed.stores : parsed;
-            var names = Object.keys(dbStores);
-            var missing = names.filter(function(name) {
+
+            // Backup format v2 lama dapat tidak menyertakan store yang belum diekspor.
+            // Pulihkan hanya tabel yang benar-benar ada di file; tabel yang tidak ada
+            // dibiarkan apa adanya agar data lokal yang tidak tercakup backup tidak terhapus.
+            var allNames = Object.keys(dbStores);
+            var missing = allNames.filter(function(name) {
               return !Array.isArray(sourceStores[name]);
             });
+            var names = allNames.filter(function(name) {
+              return Array.isArray(sourceStores[name]);
+            });
+            if (!Array.isArray(sourceStores.masterBarang)) {
+              throw new Error('File backup tidak memiliki tabel masterBarang. Restore dibatalkan.');
+            }
             if (missing.length) {
-              throw new Error('Backup tidak lengkap. Tabel tidak ditemukan: ' + missing.join(', '));
+              console.warn('[AS-Pos] Tabel tidak tercantum dalam backup dan tidak diubah:', missing);
             }
 
-            // Validasi seluruh record SEBELUM database lokal disentuh.
+            // Validasi seluruh record yang tersedia SEBELUM database lokal disentuh.
             var prepared = {};
             names.forEach(function(name) {
               var keyPath = dbStores[name];
