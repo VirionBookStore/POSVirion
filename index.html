@@ -611,6 +611,35 @@
 
 </style>
 <meta name="aspos-multicabang-candidate" content="branch-sheet-stock-v1">
+<style id="owner-sidebar-scroll-fix">
+/* Sidebar owner: menu dapat digulir penuh pada layar HP, header tetap terlihat. */
+@media screen and (max-width: 992px) {
+  .sidebar {
+    top: 0 !important;
+    bottom: 0 !important;
+    height: 100dvh !important;
+    height: 100vh !important;
+    max-height: 100dvh !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-bottom: 0 !important;
+  }
+  .sidebar-header {
+    flex: 0 0 auto !important;
+  }
+  .sidebar-menu {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+  }
+}
+</style>
 </head>
 <body>
 
