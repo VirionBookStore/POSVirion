@@ -6288,35 +6288,71 @@ function prosesCheckoutReturFinal() {
     };
 
     let asposSyncInProgress = false;
-    window.syncAllDataManual = function(isAuto) {
+    window.syncAllDataManual = async function(isAuto) {
       const autoMode = isAuto === true;
       const btn = document.getElementById('btnSyncManual');
       const txt = document.getElementById('txtDbStatus');
+      const defaultBtnText = '🔄 Sinkronkan Data';
+      const GAS_CALL_TIMEOUT_MS = 45000;
+
       if (asposSyncInProgress) {
         if (!autoMode) alert('Sinkronisasi sedang berjalan. Tunggu sampai proses selesai sebelum mencoba lagi.');
-        return;
+        return false;
       }
+
       asposSyncInProgress = true;
-      if (btn) { btn.disabled = true; btn.innerText = '⏳ Menyiapkan...'; }
+      if (btn) { btn.disabled = true; btn.innerText = '⏳ Membuka database lokal...'; }
+      if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mempersiapkan database lokal...</b>';
 
-      initIndexedDB(async function(success) {
-        if (!success || !db) {
-          asposSyncInProgress = false;
-          if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
-          if (!autoMode) alert('Database lokal tidak dapat dibuka. Tutup tab POS lain lalu muat ulang halaman.');
-          return;
-        }
-
-        function gasCall(fn, args) {
-          return new Promise(function(resolve, reject) {
-            if (!window.google || !google.script || !google.script.run) {
-              reject(new Error('Jembatan Google Apps Script tidak tersedia.'));
-              return;
-            }
-            let runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      function setStage(message, progress) {
+        if (txt) txt.innerHTML = '<b style="color:#087f8c;">' + message + '</b>';
+        if (btn) btn.innerText = '⏳ ' + (progress || message);
+      }
+      function gasCall(fn, args) {
+        return new Promise(function(resolve, reject) {
+          if (!window.google || !google.script || !google.script.run) {
+            reject(new Error('Jembatan Google Apps Script tidak tersedia. Periksa URL Web App GAS.'));
+            return;
+          }
+          let settled = false;
+          const timer = setTimeout(function() {
+            if (settled) return;
+            settled = true;
+            reject(new Error('Waktu tunggu GAS habis saat menjalankan ' + fn + ' (' + (GAS_CALL_TIMEOUT_MS/1000) + ' detik). Periksa deployment /exec dan izin akses Web App.'));
+          }, GAS_CALL_TIMEOUT_MS);
+          function finish(ok, value) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            ok ? resolve(value) : reject(value instanceof Error ? value : new Error(String(value || ('Gagal menjalankan ' + fn))));
+          }
+          try {
+            let runner = google.script.run
+              .withSuccessHandler(function(value) { finish(true, value); })
+              .withFailureHandler(function(error) {
+                finish(false, error && error.message ? new Error(error.message) : error);
+              });
             runner[fn].apply(runner, Array.isArray(args) ? args : []);
+          } catch (error) {
+            finish(false, error);
+          }
+        });
+      }
+
+      try {
+        const dbReady = await new Promise(function(resolve) {
+          let finished = false;
+          const timer = setTimeout(function() {
+            if (!finished) { finished = true; resolve(false); }
+          }, 10000);
+          initIndexedDB(function(success) {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            resolve(!!success && !!db);
           });
-        }
+        });
+        if (!dbReady) throw new Error('IndexedDB tidak berhasil dibuka dalam 10 detik. Tutup tab POS lain yang masih terbuka, lalu muat ulang aplikasi.');
 
         const normalTasks = [
           ['supplier','getSupplier', []],
@@ -6326,141 +6362,101 @@ function prosesCheckoutReturFinal() {
           ['riwayatPenjualan','getPenjualan', [currentUser ? currentUser.id_cabang : '', currentUser ? currentUser.role : '']],
           ['cabang','getCabang', []]
         ];
-
         const storeLabels = {
-          masterBarang:'Master Barang',
-          supplier:'Supplier',
-          promo:'Promo',
-          stokMasuk:'Stok Masuk',
-          returBarang:'Retur Barang',
-          riwayatPenjualan:'Riwayat Penjualan',
-          cabang:'Cabang'
+          masterBarang:'Master Barang', supplier:'Supplier', promo:'Promo',
+          stokMasuk:'Stok Masuk', returBarang:'Retur Barang',
+          riwayatPenjualan:'Riwayat Penjualan', cabang:'Cabang'
         };
 
-        try {
-          if (txt) txt.innerHTML = '<b style="color:#087f8c;">Mengambil jumlah master barang dari Google Sheets...</b>';
-          const totalBarang = Number(await gasCall('getBarangTotalCount', [])) || 0;
-          await clearStore('masterBarang');
+        setStage('Menghubungi Google Sheets untuk menghitung master barang...', 'Menghubungi GAS...');
+        const totalBarang = Number(await gasCall('getBarangTotalCount', []));
+        if (!Number.isFinite(totalBarang) || totalBarang < 0) throw new Error('Jumlah Master Barang dari GAS tidak valid: ' + totalBarang);
+        if (totalBarang > 200000) throw new Error('Jumlah barang (' + totalBarang + ') melebihi batas sinkronisasi aman per sesi.');
 
-          let receivedBarang = 0;
-          let receivedUniqueBarang = 0;
-          const seenBarangIds = new Set();
-          let duplicateBarang = 0;
-          const batchSize = 1000;
-          for (let offset = 0; offset < totalBarang; offset += batchSize) {
-            const branchId = currentUser ? currentUser.id_cabang : null;
-            const batchResult = await gasCall('getBarangBatch', [offset, batchSize, branchId]);
-            let batch = [];
-            if (Array.isArray(batchResult)) {
-              batch = batchResult;
-            } else if (batchResult && Array.isArray(batchResult.data)) {
-              batch = batchResult.data;
-            } else if (batchResult && batchResult.data && Array.isArray(batchResult.data.data)) {
-              batch = batchResult.data.data;
-            } else if (batchResult && Array.isArray(batchResult.result)) {
-              batch = batchResult.result;
-            } else if (batchResult && Array.isArray(batchResult.items)) {
-              batch = batchResult.items;
-            } else if (batchResult && batchResult.data && Array.isArray(batchResult.data.items)) {
-              batch = batchResult.data.items;
-            }
-
-            if (!batch.length && offset === 0 && totalBarang <= 5000) {
-              if (txt) txt.innerHTML = '<b style="color:#d97706;">API batch belum mengembalikan data. Menggunakan mode kompatibilitas...</b>';
-              const fallbackData = await gasCall('getBarang', [branchId]);
-              if (Array.isArray(fallbackData) && fallbackData.length) {
-                batch = fallbackData;
-              } else if (fallbackData && Array.isArray(fallbackData.data)) {
-                batch = fallbackData.data;
-              }
-              if (batch.length) {
-                offset = totalBarang;
-              }
-            }
-
-            if (!batch.length && offset < totalBarang) {
-              throw new Error('Batch Master Barang kosong pada posisi '+offset+' padahal total sumber '+totalBarang+'.');
-            }
-
-            const validBatch = [];
-            batch.forEach(function(item) {
-              const id = item && item.id_barang !== undefined && item.id_barang !== null
-                ? String(item.id_barang).trim() : '';
-              if (!id) return;
-              if (seenBarangIds.has(id)) {
-                duplicateBarang++;
-                return;
-              }
-              seenBarangIds.add(id);
-              const normalizedItem = Object.assign({}, item, { id_barang: id });
-              validBatch.push(normalizedItem);
-            });
-
-            const saved = await putStoreBatch('masterBarang', validBatch);
-            if (saved.skipped) throw new Error('Master Barang: '+saved.skipped+' record tidak memiliki ID Barang.');
-            receivedBarang += batch.length;
-            receivedUniqueBarang += saved.count;
-            const pct = totalBarang ? Math.min(99, Math.round(receivedBarang / totalBarang * 70)) : 10;
-            if (btn) btn.innerText = '⏳ '+pct+'%';
-            if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron Master Barang...</b><br>'+receivedBarang.toLocaleString('id-ID')+' / '+totalBarang.toLocaleString('id-ID')+' record'+
-              (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: '+duplicateBarang+'</span>' : '');
-          }
-
-          for (let i=0; i<normalTasks.length; i++) {
-            const storeName = normalTasks[i][0];
-            const fnName = normalTasks[i][1];
-            const fnArgs = normalTasks[i][2] || [];
-            if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron '+storeLabels[storeName]+'...</b>';
-            const data = await gasCall(fnName, fnArgs);
-            if (!Array.isArray(data)) throw new Error(storeLabels[storeName]+' dari GAS bukan array.');
-            const result = await replaceStore(storeName, data);
-            if (result.skipped) throw new Error(storeLabels[storeName]+': '+result.skipped+' record tidak memiliki key yang valid.');
-            const pct = 70 + Math.round((i+1) / normalTasks.length * 25);
-            if (btn) btn.innerText = '⏳ '+Math.min(95,pct)+'%';
-          }
-
-          const verify = {};
-          for (const name of Object.keys(dbStores)) {
-            verify[name] = await getLocalStoreCount(name);
-          }
-          if (verify.masterBarang !== receivedUniqueBarang) {
-            throw new Error(
-              'Verifikasi Master Barang gagal: lokal '+verify.masterBarang+
-              ', data valid diterima '+receivedUniqueBarang+'.'
-            );
-          }
-		  
-          const counts = await Promise.all(Object.keys(dbStores).map(async function(name) {
-            return { name: name, count: await getLocalStoreCount(name) };
-          }));
-
-          const nowStr = new Date().toLocaleString('id-ID');
-          localStorage.setItem('aspos_last_sync', nowStr);
-          asposSyncInProgress = false;
-          if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
-          if (txt) {
-            txt.innerHTML = '<b style="color:#00a65a;">Sinkronisasi Selesai!</b><br>' +
-              'Data berhasil diperbarui dari Google Sheets pada ' + nowStr;
-          }
-          if (!autoMode) {
-            alert('Sinkronisasi data berhasil diselesaikan!');
-          }
-          if (typeof loadBarang === 'function') loadBarang();
-          if (typeof checkLocalDbStatus === 'function') checkLocalDbStatus();
-
-        } catch (err) {
-          asposSyncInProgress = false;
-          if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
-          console.error('[AS-Pos] Sync error:', err);
-          if (txt) {
-            txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Sinkronisasi gagal: ' + 
-              (err && err.message ? err.message : String(err)) + '</span>';
-          }
-          if (!autoMode) {
-            alert('Gagal melakukan sinkronisasi:\n\n' + (err && err.message ? err.message : String(err)));
-          }
+        // Jangan hapus katalog lama sebelum batch pertama dari server terbukti dapat dibaca.
+        let firstBatch = [];
+        if (totalBarang > 0) {
+          setStage('Mengambil batch pertama Master Barang...', 'Mengambil data...');
+          const firstResult = await gasCall('getBarangBatch', [0, 1000, currentUser ? currentUser.id_cabang : null]);
+          if (Array.isArray(firstResult)) firstBatch = firstResult;
+          else if (firstResult && Array.isArray(firstResult.items)) firstBatch = firstResult.items;
+          else if (firstResult && firstResult.data && Array.isArray(firstResult.data.items)) firstBatch = firstResult.data.items;
+          else if (firstResult && Array.isArray(firstResult.data)) firstBatch = firstResult.data;
+          else if (firstResult && Array.isArray(firstResult.result)) firstBatch = firstResult.result;
+          if (!firstBatch.length) throw new Error('GAS getBarangBatch tidak mengembalikan items pada batch pertama. Periksa fungsi getBarangBatch dan deployment Web App.');
         }
-      });
+
+        await clearStore('masterBarang');
+        let receivedBarang = 0;
+        let receivedUniqueBarang = 0;
+        const seenBarangIds = new Set();
+        let duplicateBarang = 0;
+        const batchSize = 1000;
+        for (let offset = 0; offset < totalBarang; offset += batchSize) {
+          let batch = offset === 0 ? firstBatch : [];
+          if (offset > 0) {
+            setStage('Mengambil Master Barang ' + (offset + 1).toLocaleString('id-ID') + ' dari ' + totalBarang.toLocaleString('id-ID') + '...', 'Master Barang ' + Math.round(offset / totalBarang * 70) + '%');
+            const batchResult = await gasCall('getBarangBatch', [offset, batchSize, currentUser ? currentUser.id_cabang : null]);
+            if (Array.isArray(batchResult)) batch = batchResult;
+            else if (batchResult && Array.isArray(batchResult.items)) batch = batchResult.items;
+            else if (batchResult && batchResult.data && Array.isArray(batchResult.data.items)) batch = batchResult.data.items;
+            else if (batchResult && Array.isArray(batchResult.data)) batch = batchResult.data;
+            else if (batchResult && Array.isArray(batchResult.result)) batch = batchResult.result;
+          }
+          if (!batch.length) throw new Error('Batch Master Barang kosong pada posisi ' + offset + ' padahal total sumber ' + totalBarang + '.');
+
+          const validBatch = [];
+          batch.forEach(function(item) {
+            const id = item && item.id_barang != null ? String(item.id_barang).trim() : '';
+            if (!id) return;
+            if (seenBarangIds.has(id)) { duplicateBarang++; return; }
+            seenBarangIds.add(id);
+            validBatch.push(Object.assign({}, item, { id_barang: id }));
+          });
+          const saved = await putStoreBatch('masterBarang', validBatch);
+          if (saved.skipped) throw new Error('Master Barang: ' + saved.skipped + ' record tidak memiliki key yang valid.');
+          receivedBarang += batch.length;
+          receivedUniqueBarang += saved.count;
+          const pct = totalBarang ? Math.min(70, Math.round(receivedBarang / totalBarang * 70)) : 70;
+          if (btn) btn.innerText = '⏳ ' + pct + '%';
+          if (txt) txt.innerHTML = '<b style="color:#087f8c;">Sinkron Master Barang...</b><br>' +
+            receivedBarang.toLocaleString('id-ID') + ' / ' + totalBarang.toLocaleString('id-ID') + ' record' +
+            (duplicateBarang ? '<br><span style="color:#d97706;">ID barang duplikat: ' + duplicateBarang + '</span>' : '');
+        }
+
+        for (let i = 0; i < normalTasks.length; i++) {
+          const storeName = normalTasks[i][0];
+          setStage('Sinkron ' + storeLabels[storeName] + '...', 'Data pendukung ' + Math.round((i + 1) / normalTasks.length * 25 + 70) + '%');
+          const data = await gasCall(normalTasks[i][1], normalTasks[i][2] || []);
+          if (!Array.isArray(data)) throw new Error(storeLabels[storeName] + ' dari GAS bukan array.');
+          const result = await replaceStore(storeName, data);
+          if (result.skipped) throw new Error(storeLabels[storeName] + ': ' + result.skipped + ' record tidak memiliki key yang valid.');
+        }
+
+        const localMasterCount = await getLocalStoreCount('masterBarang');
+        if (localMasterCount !== receivedUniqueBarang) {
+          throw new Error('Verifikasi Master Barang gagal: lokal ' + localMasterCount + ', data valid diterima ' + receivedUniqueBarang + '.');
+        }
+
+        const nowStr = new Date().toLocaleString('id-ID');
+        localStorage.setItem('aspos_last_sync', nowStr);
+        localStorage.setItem('aspos_last_sync_epoch', String(Date.now()));
+        if (txt) txt.innerHTML = '<b style="color:#00a65a;">Sinkronisasi Selesai!</b><br>Data berhasil diperbarui dari Google Sheets pada ' + nowStr +
+          '<br>Master barang: ' + localMasterCount.toLocaleString('id-ID') + ' item.';
+        if (!autoMode) alert('Sinkronisasi data berhasil diselesaikan!\nMaster barang: ' + localMasterCount.toLocaleString('id-ID') + ' item.');
+        if (typeof loadBarang === 'function') loadBarang();
+        if (typeof checkLocalDbStatus === 'function') checkLocalDbStatus();
+        return true;
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        console.error('[AS-Pos] Sync error:', err);
+        if (txt) txt.innerHTML = '<span style="color:#dc3545;font-weight:bold;">Sinkronisasi gagal: ' + message.replace(/[<>]/g, '') + '</span><br><span style="color:#64748b;">Data lokal yang sudah tersimpan tetap dipertahankan sejauh tahap yang belum diganti.</span>';
+        if (!autoMode) alert('Gagal melakukan sinkronisasi:\n\n' + message);
+        return false;
+      } finally {
+        asposSyncInProgress = false;
+        if (btn) { btn.disabled = false; btn.innerText = defaultBtnText; }
+      }
     };
 
     // Sinkronisasi otomatis maksimal setiap 1 jam.
