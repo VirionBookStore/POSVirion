@@ -1735,7 +1735,7 @@
   <script>
     window.AS_POS_CONFIG = window.AS_POS_CONFIG || {
       // GANTI dengan URL deployment Web App GAS yang berakhiran /exec.
-      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbw0N2pUle7FZ93E4HARXNUPGtRLBYEW0n0uu0jrksyK1buRfj5Q-957xiDeaPj9H1M/exec"
+      GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbwIFPI5FqYXuNdpVb75Vz3YfUVnomN5guYJ6-gU4_9b87U7l4yJj_wHU-JL0vjDTbw/exec"
     };
 
     (function installGasBridge() {
@@ -1939,34 +1939,68 @@
     }
     function handleLoginSubmit(event) {
       event.preventDefault();
-      var email = document.getElementById("loginEmail").value;
+      var email = document.getElementById("loginEmail").value.trim();
       var password = document.getElementById("loginPassword").value;
       var btn = document.getElementById("btnLogin");
+      var settled = false;
+      var loginTimer = null;
+
+      function resetLogin(message) {
+        if (settled) return;
+        settled = true;
+        if (loginTimer) clearTimeout(loginTimer);
+        btn.innerText = "Masuk Aplikasi";
+        btn.disabled = false;
+        if (message) alert(message);
+      }
+
+      if (!email || !password) {
+        resetLogin("Email dan Password / PIN wajib diisi.");
+        return;
+      }
+
       btn.innerText = "Memeriksa...";
       btn.disabled = true;
+      loginTimer = setTimeout(function() {
+        resetLogin("Server GAS belum merespons setelah 45 detik. Periksa koneksi internet dan deployment Web App GAS, lalu coba login kembali.");
+      }, 45000);
 
-      google.script.run.withSuccessHandler(function(res) {
-        if (res.status === "success") {
-          currentUser = res.user; // res.user sudah membawa id_cabang & nama_cabang dari GAS
-          localStorage.setItem("as_pos_current_user", JSON.stringify(currentUser));
-          document.getElementById("loginWrapper").style.display = "none";
-          document.getElementById("appWrapper").style.display = "flex";
-          document.getElementById("userName").innerText = res.user.nama;
-          document.getElementById("userRole").innerText = res.user.role;
-          document.getElementById("userAvatar").src = res.user.foto;
-          
-          // Tambahkan informasi cabang pada tampilan header jika diinginkan
-          var cabangLabel = res.user.nama_cabang ? " (" + res.user.nama_cabang + ")" : "";
-          document.getElementById("cashierNameDisplay").innerText = "Kasir: " + res.user.nama + cabangLabel;
-          
-          if(!applyRolePermissions()) return;
-          initApp();
-        } else {
-          alert(res.message);
-          btn.innerText = "Masuk Aplikasi";
-          btn.disabled = false;
-        }
-      }).prosesLogin(email, password);
+      try {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (settled) return;
+            if (!res || typeof res !== "object") {
+              resetLogin("Respons login dari GAS kosong atau tidak valid. Periksa deployment Web App.");
+              return;
+            }
+            if (res.status === "success" && res.user) {
+              settled = true;
+              if (loginTimer) clearTimeout(loginTimer);
+              currentUser = res.user; // res.user membawa id_cabang & nama_cabang dari GAS
+              localStorage.setItem("as_pos_current_user", JSON.stringify(currentUser));
+              document.getElementById("loginWrapper").style.display = "none";
+              document.getElementById("appWrapper").style.display = "flex";
+              document.getElementById("userName").innerText = res.user.nama || "";
+              document.getElementById("userRole").innerText = res.user.role || "";
+              if (res.user.foto) document.getElementById("userAvatar").src = res.user.foto;
+
+              var cabangLabel = res.user.nama_cabang ? " (" + res.user.nama_cabang + ")" : "";
+              document.getElementById("cashierNameDisplay").innerText = "Kasir: " + (res.user.nama || "") + cabangLabel;
+
+              if (!applyRolePermissions()) return;
+              initApp();
+            } else {
+              resetLogin(res.message || "Email atau Password / PIN tidak sesuai.");
+            }
+          })
+          .withFailureHandler(function(error) {
+            var message = error && error.message ? error.message : String(error || "Kesalahan tidak diketahui");
+            resetLogin("Login gagal menghubungi GAS: " + message);
+          })
+          .prosesLogin(email, password);
+      } catch (error) {
+        resetLogin("Terjadi kesalahan saat memulai login: " + (error && error.message ? error.message : error));
+      }
     }
 
     function logoutUser() {
