@@ -1772,7 +1772,7 @@
         })
         .then(function(response) {
           if (!response.ok) throw new Error('HTTP ' + response.status + ' dari Web App GAS.');
-          if (response.url && /accounts\\.google\\.com/i.test(response.url)) {
+          if (response.url && response.url.indexOf('accounts.google.com') !== -1) {
             throw new Error('Web App GAS mengarahkan ke halaman login Google. Ubah akses deployment menjadi Anyone dan Execute as Me.');
           }
           return response.text().then(function(bodyText) {
@@ -1786,7 +1786,7 @@
           let result;
           try { result = JSON.parse(bodyText); }
           catch (e) {
-            if (/accounts\\.google\\.com|ServiceLogin|signin/i.test(bodyText)) {
+            if (bodyText.indexOf('accounts.google.com') !== -1 || /ServiceLogin|signin/i.test(bodyText)) {
               throw new Error('GAS mengembalikan halaman login Google, bukan JSON. Periksa akses deployment Web App: Anyone.');
             }
             throw new Error('Respons GAS bukan JSON. HTTP ' + payload.response.status +
