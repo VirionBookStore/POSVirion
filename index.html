@@ -1753,26 +1753,55 @@
           return;
         }
 
+        // Batasi waktu tunggu per request. Tanpa ini, fetch dapat menggantung
+        // saat redirect /exec -> script.googleusercontent.com atau akses deployment bermasalah.
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        let requestFinished = false;
+        const requestTimer = setTimeout(function() {
+          if (!requestFinished && controller) controller.abort();
+        }, 20000);
+
         fetch(apiUrl, {
           method: 'POST',
           redirect: 'follow',
           cache: 'no-store',
           // text/plain sengaja dipakai agar request tidak memicu preflight CORS.
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ functionName: functionName, args: args || [] })
+          body: JSON.stringify({ functionName: functionName, args: args || [] }),
+          signal: controller ? controller.signal : undefined
         })
         .then(function(response) {
           if (!response.ok) throw new Error('HTTP ' + response.status + ' dari Web App GAS.');
-          return response.text();
+          if (response.url && /accounts\\.google\\.com/i.test(response.url)) {
+            throw new Error('Web App GAS mengarahkan ke halaman login Google. Ubah akses deployment menjadi Anyone dan Execute as Me.');
+          }
+          return response.text().then(function(bodyText) {
+            return { response: response, bodyText: bodyText };
+          });
         })
-        .then(function(text) {
+        .then(function(payload) {
+          requestFinished = true;
+          clearTimeout(requestTimer);
+          const bodyText = payload.bodyText || '';
           let result;
-          try { result = JSON.parse(text); }
-          catch (e) { throw new Error('Respons GAS bukan JSON yang valid: ' + text.slice(0, 300)); }
+          try { result = JSON.parse(bodyText); }
+          catch (e) {
+            if (/accounts\\.google\\.com|ServiceLogin|signin/i.test(bodyText)) {
+              throw new Error('GAS mengembalikan halaman login Google, bukan JSON. Periksa akses deployment Web App: Anyone.');
+            }
+            throw new Error('Respons GAS bukan JSON. HTTP ' + payload.response.status +
+              ', URL akhir: ' + (payload.response.url || '(tidak tersedia)') +
+              ', isi: ' + bodyText.slice(0, 180));
+          }
           if (result && result.ok === false) throw new Error(result.message || 'Gagal menjalankan fungsi GAS.');
           if (typeof success === 'function') success(result ? result.data : undefined);
         })
         .catch(function(error) {
+          requestFinished = true;
+          clearTimeout(requestTimer);
+          if (error && error.name === 'AbortError') {
+            error = new Error('Request ke GAS melewati 20 detik dan dibatalkan. Periksa GAS > Executions: jika tidak ada eksekusi, periksa URL/izin deployment; jika eksekusi masih berjalan, periksa ensureSchemaOnce_ atau prosesLogin.');
+          }
           console.error('[AS-Pos GAS]', functionName, error);
           if (typeof failure === 'function') failure(error);
           else console.warn('Koneksi background gagal (diabaikan): ' + error.message);
