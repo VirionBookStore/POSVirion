@@ -27,6 +27,12 @@ Perbaikan pada branch ini:
 - Refresh katalog pada menu Retur POS juga melewati overlay pending, bukan langsung menampilkan data server mentah.
 - Penanganan record lama pada store `pendingReturTukar` tetap dipertahankan dengan deduplikasi ID antrean.
 
+## Optimasi tambahan yang sudah diterapkan pada branch audit
+
+### Pemeriksaan status database untuk katalog besar
+
+Sebelumnya, indikator status memanggil `getAllFromStore` untuk seluruh object store hanya untuk menghitung jumlah record. Sekarang jumlah tiap store dihitung menggunakan `getLocalStoreCount` (IndexedDB `count()`), sedangkan isi data hanya dibaca dari antrean pending untuk menghitung transaksi berstatus PENDING. Ini mengurangi pembacaan data besar saat membuka menu status database.
+
 ## Temuan audit lanjutan — belum diubah
 
 ### 1. Sinkronisasi master barang belum aman terhadap kegagalan di tengah proses
