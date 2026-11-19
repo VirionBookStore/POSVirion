@@ -6253,13 +6253,25 @@ function prosesCheckoutReturFinal() {
             return;
           }
           try {
-            const results = await Promise.all(Object.keys(dbStores).map(function(name) {
-              return getAllFromStore(name).then(function(data){ return {name:name,count:data.length,data:data}; });
+            // Untuk indikator jumlah, gunakan IDB count() agar tidak memuat seluruh
+            // master barang dan seluruh riwayat ke memori hanya demi menghitung record.
+            const counts = await Promise.all(Object.keys(dbStores).map(async function(name) {
+              return { name: name, count: await getLocalStoreCount(name) };
             }));
-            const total = results.reduce(function(sum,r){ return sum + r.count; }, 0);
-            const barang = results.find(function(r){ return r.name === 'masterBarang'; });
-            const pending = results.filter(function(r){ return r.name === 'pendingTransactions' || r.name === 'pendingReturTukar'; })
-              .reduce(function(sum,r){ return sum + (r.data || []).filter(function(item){ return String(item.status || '').toUpperCase() === 'PENDING'; }).length; }, 0);
+            const total = counts.reduce(function(sum, r){ return sum + r.count; }, 0);
+            const barang = counts.find(function(r){ return r.name === 'masterBarang'; });
+            // Baca isi hanya pada dua antrean agar jumlah PENDING tetap akurat.
+            const pendingStores = ['pendingTransactions', 'pendingReturTukar'].filter(function(name) {
+              return Object.prototype.hasOwnProperty.call(dbStores, name);
+            });
+            const pendingRows = await Promise.all(pendingStores.map(function(name) {
+              return getAllFromStore(name).catch(function(){ return []; });
+            }));
+            const pending = pendingRows.reduce(function(sum, rows) {
+              return sum + (rows || []).filter(function(item) {
+                return String(item.status || '').toUpperCase() === 'PENDING';
+              }).length;
+            }, 0);
             const barangCount = barang ? barang.count : 0;
             const lastSync = localStorage.getItem('aspos_last_sync') || 'Belum pernah';
             if (txt) {
