@@ -6003,6 +6003,7 @@ function prosesCheckoutReturFinal() {
         const retryList = list.filter(function(item) {
           return Number(item.retryCount || 0) > 0 && item.clientTransactionId;
         });
+        let retryAuditAllowed = retryList.length === 0;
 
         if (retryList.length && asposIsOnline()) {
           try {
@@ -6017,6 +6018,7 @@ function prosesCheckoutReturFinal() {
             }
 
             const syncedMap = auditRes.syncedMap;
+            retryAuditAllowed = true;
             for (const item of retryList) {
               const match = syncedMap[item.clientTransactionId];
               const serverNota = match && (match.no_nota || match.id_transaksi);
@@ -6056,17 +6058,6 @@ function prosesCheckoutReturFinal() {
         // jika audit server berhasil; retry baru (retryCount=0) tetap dapat diproses normal.
         const currentList = await getAllFromStore('pendingTransactions');
         const retryIds = new Set(retryList.map(function(item){ return item.clientTransactionId; }));
-        const auditWasRequired = retryList.length > 0;
-        let retryAuditAllowed = !auditWasRequired;
-        if (auditWasRequired) {
-          // Audit yang gagal dicatat lewat log AUDIT_RETRY_BLOCKED.
-          const recentLogs = JSON.parse(localStorage.getItem(ASPOS_AUDIT_KEY) || '[]');
-          const blocked = recentLogs.some(function(log) {
-            return log && log.type === 'AUDIT_RETRY_BLOCKED' &&
-              Date.now() - (new Date(log.time).getTime() || 0) < 60000;
-          });
-          retryAuditAllowed = !blocked;
-        }
 
         for (const item of currentList) {
           if (!asposIsOnline()) break;
