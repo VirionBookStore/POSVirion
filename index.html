@@ -6639,8 +6639,35 @@ async function asposLoadLocalFirst(options) {
           reject(new Error('Jembatan Google Apps Script tidak tersedia.'));
           return;
         }
-        let runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-        runner[fn].apply(runner, Array.isArray(args) ? args : []);
+        let settled = false;
+        const timeoutMs = 45000;
+        const timer = setTimeout(function() {
+          if (settled) return;
+          settled = true;
+          reject(new Error('Permintaan GAS ' + fn + ' tidak mendapat jawaban dalam 45 detik. Periksa koneksi atau fungsi server, lalu coba sinkronisasi lagi.'));
+        }, timeoutMs);
+        let runner = google.script.run
+          .withSuccessHandler(function(result) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(result);
+          })
+          .withFailureHandler(function(error) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(error || new Error('Permintaan GAS ' + fn + ' gagal.'));
+          });
+        try {
+          runner[fn].apply(runner, Array.isArray(args) ? args : []);
+        } catch (error) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(error);
+          }
+        }
       });
     }
 
@@ -6777,6 +6804,7 @@ async function asposLoadLocalFirst(options) {
 
       const nowStr = new Date().toLocaleString('id-ID');
       localStorage.setItem('aspos_last_sync', nowStr);
+      localStorage.setItem('aspos_last_sync_epoch', String(Date.now()));
       asposSyncInProgress = false;
       if (btn) { btn.disabled = false; btn.innerText = '🔄 Sinkronkan Data'; }
       if (txt) {
@@ -6828,9 +6856,10 @@ async function asposLoadLocalFirst(options) {
 
         const lastSyncEpoch = Number(localStorage.getItem('aspos_last_sync_epoch') || 0);
         const hasPreviousSync = !!localStorage.getItem('aspos_last_sync');
-        // Jangan tarik data berulang saat tab kembali aktif; tunggu sampai 1 jam.
-        // Sinkronisasi awal hanya dilakukan bila perangkat belum pernah berhasil sinkron.
-        if (!force && hasPreviousSync && lastSyncEpoch && (Date.now() - lastSyncEpoch < AUTO_SYNC_INTERVAL)) return;
+        // Jangan memulai sinkronisasi otomatis pada pembukaan pertama.
+        // Sinkronisasi awal dilakukan manual; setelah berhasil, otomatis berjalan tiap 1 jam.
+        if (!hasPreviousSync || !lastSyncEpoch) return;
+        if (!force && (Date.now() - lastSyncEpoch < AUTO_SYNC_INTERVAL)) return;
 
         autoSyncRunning = true;
         Promise.resolve()
@@ -6843,10 +6872,8 @@ async function asposLoadLocalFirst(options) {
           });
       };
 
-      // Jika belum pernah berhasil sinkron, lakukan satu sinkronisasi awal setelah halaman siap.
-      setTimeout(function() {
-        if (!localStorage.getItem('aspos_last_sync')) window.asposAutoSyncNow();
-      }, 60000);
+      // Tidak ada sinkronisasi otomatis pada pembukaan pertama.
+      // Pengguna menjalankan sinkronisasi awal melalui tombol manual.
 
       // Pemeriksaan ringan tiap menit; pengambilan data hanya dilakukan setelah 1 jam.
       setInterval(function() {
