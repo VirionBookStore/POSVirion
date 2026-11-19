@@ -6748,40 +6748,68 @@ function prosesCheckoutReturFinal() {
     // Kompensasi stok untuk transaksi penjualan offline yang masih PENDING.
     async function applyPendingStockDeductions_(serverBarangList, branchId) {
       try {
-        var ready=await asposEnsureIndexedDB();
-        if(!ready) return serverBarangList||[];
-        var pending=await getAllFromStore('pendingTransactions');
-        var pendingReturns=await getAllFromStore('pendingReturTukar').catch(function(){return [];});
-        var branch=String(branchId||'');
-        var qtyDeltaMap={};
-        // Penjualan PENDING mengurangi stok lokal.
-        (pending||[]).forEach(function(trx){
-          if(!trx || String(trx.status||'').toUpperCase()!=='PENDING') return;
-          if(branch && String(trx.id_cabang||trx.idCabang||'')!==branch) return;
-          var items=Array.isArray(trx.items)?trx.items:(Array.isArray(trx.detail)?trx.detail:[]);
-          items.forEach(function(it){
-            var id=String(it.id_barang||'').trim(), qty=Number(it.qty)||0;
-            if(id && qty>0) qtyDeltaMap[id]=(qtyDeltaMap[id]||0)-qty;
+        var ready = await asposEnsureIndexedDB();
+        if (!ready) return serverBarangList || [];
+
+        var pending = await getAllFromStore('pendingTransactions');
+        var legacyReturns = await getAllFromStore('pendingReturTukar').catch(function(){ return []; });
+        var branch = String(branchId || '').trim();
+        var qtyDeltaMap = {};
+        var processedIds = new Set();
+
+        // Bentuk antrean saat ini menyimpan cabang dan items di dalam payload.
+        // Tetap dukung bentuk lama yang menyimpan items/cabang di level teratas.
+        function applyPendingRecord(trx, defaultType) {
+          if (!trx || String(trx.status || '').toUpperCase() !== 'PENDING') return;
+
+          var payload = trx.payload && typeof trx.payload === 'object' ? trx.payload : {};
+          var trxBranch = String(
+            trx.id_cabang || trx.idCabang ||
+            payload.id_cabang || payload.idCabang || ''
+          ).trim();
+          if (branch && trxBranch !== branch) return;
+
+          var uniqueId = String(trx.clientTransactionId || trx.clientReturId || trx.no_nota || '');
+          if (uniqueId && processedIds.has(uniqueId)) return;
+          if (uniqueId) processedIds.add(uniqueId);
+
+          var items = Array.isArray(trx.items) ? trx.items :
+            (Array.isArray(trx.detail) ? trx.detail :
+            (Array.isArray(payload.items) ? payload.items : []));
+          var isReturn = String(trx.txType || defaultType || '').toUpperCase() === 'RETUR_TUKAR';
+
+          items.forEach(function(it) {
+            var id = String(it && it.id_barang || '').trim();
+            var qty = Number(it && it.qty) || 0;
+            if (!id || qty <= 0) return;
+
+            // Penjualan mengurangi stok. Retur menambah stok, sedangkan barang
+            // pengganti/pembelian dalam transaksi tukar mengurangi stok.
+            var delta = isReturn
+              ? (String(it.mode || 'retur').toLowerCase() === 'retur' ? qty : -qty)
+              : -qty;
+            qtyDeltaMap[id] = (qtyDeltaMap[id] || 0) + delta;
+          });
+        }
+
+        (pending || []).forEach(function(trx) {
+          applyPendingRecord(trx, 'PENJUALAN');
+        });
+        (legacyReturns || []).forEach(function(trx) {
+          applyPendingRecord(trx, 'RETUR_TUKAR');
+        });
+
+        return (serverBarangList || []).map(function(item) {
+          var id = String(item.id_barang || '').trim();
+          var delta = qtyDeltaMap[id] || 0;
+          if (!delta) return item;
+          return Object.assign({}, item, {
+            stok: Math.max(0, (Number(item.stok) || 0) + delta)
           });
         });
-        // Retur PENDING menambah stok; barang pengganti/beli mengurangi stok.
-        (pendingReturns||[]).forEach(function(trx){
-          if(!trx || String(trx.status||'').toUpperCase()!=='PENDING') return;
-          if(branch && String(trx.id_cabang||trx.idCabang||'')!==branch) return;
-          (Array.isArray(trx.items)?trx.items:[]).forEach(function(it){
-            var id=String(it.id_barang||'').trim(), qty=Number(it.qty)||0;
-            if(!id || qty<=0) return;
-            qtyDeltaMap[id]=(qtyDeltaMap[id]||0)+(String(it.mode||'retur').toLowerCase()==='retur'?qty:-qty);
-          });
-        });
-        return (serverBarangList||[]).map(function(item){
-          var id=String(item.id_barang||'').trim(), delta=qtyDeltaMap[id]||0;
-          if(!delta) return item;
-          return Object.assign({},item,{stok:Math.max(0,(Number(item.stok)||0)+delta)});
-        });
-      }catch(err){
-        console.warn('[AS-Pos] Gagal menghitung antrean stok offline:',err);
-        return serverBarangList||[];
+      } catch (err) {
+        console.warn('[AS-Pos] Gagal menghitung antrean stok offline:', err);
+        return serverBarangList || [];
       }
     }
 
@@ -6875,10 +6903,12 @@ function prosesCheckoutReturFinal() {
 
       if (!asposIsOnline()) return;
 
-      asposCallGasLocalFirst('getBarang', [branchId]).then(function(data) {
+      asposCallGasLocalFirst('getBarang', [branchId]).then(async function(data) {
         if (!Array.isArray(data)) return;
-        globalDataBarang = data;
-        asposSaveBranchCatalogCache(branchId, data);
+        // Pertahankan perubahan stok dari antrean offline saat katalog server dimuat ulang.
+        var safeData = await applyPendingStockDeductions_(data, branchId);
+        globalDataBarang = safeData;
+        asposSaveBranchCatalogCache(branchId, safeData);
         renderReturSuppliers();
         renderReturProductList();
         renderKeranjangRetur();
