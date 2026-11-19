@@ -6018,7 +6018,6 @@ function prosesCheckoutReturFinal() {
             }
 
             const syncedMap = auditRes.syncedMap;
-            retryAuditAllowed = true;
             for (const item of retryList) {
               const match = syncedMap[item.clientTransactionId];
               const serverNota = match && (match.no_nota || match.id_transaksi);
@@ -6044,7 +6043,9 @@ function prosesCheckoutReturFinal() {
                   txType: item.txType || 'PENJUALAN'
                 });
             }
+            retryAuditAllowed = true;
           } catch(auditErr) {
+            retryAuditAllowed = false;
             console.warn('[AS-Pos] Audit retry gagal; antrean retry lama tidak dikirim ulang:', auditErr);
             await asposWriteAuditLog('AUDIT_RETRY_BLOCKED',
               'Retry ditahan karena status transaksi di server belum dapat dipastikan.', {
