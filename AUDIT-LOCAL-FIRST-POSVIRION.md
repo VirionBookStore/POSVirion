@@ -53,11 +53,9 @@ Restore membersihkan dan mengisi setiap object store melalui transaksi terpisah.
 
 Rekomendasi: validasi file backup terlebih dahulu (format, versi, nama store, keyPath, dan kelengkapan data), simpan snapshot pemulihan, lalu gunakan strategi restore yang dapat dibatalkan/dipulihkan bila salah satu tahap gagal.
 
-### 4. Pemeriksaan status database membaca seluruh isi store hanya untuk menghitung record
+### 4. Pemeriksaan status database membaca seluruh isi store hanya untuk menghitung record — SELESAI
 
-`checkLocalDbStatus` memanggil `getAllFromStore` untuk seluruh store lalu menghitung panjang array. Fungsi `getLocalStoreCount` sudah tersedia di file yang sama, sehingga pembacaan semua record untuk sekadar menampilkan jumlah berpotensi membebani perangkat ketika master barang besar.
-
-Rekomendasi: gunakan operasi IndexedDB `count()` per store untuk indikator jumlah data; baca isi antrean hanya ketika rincian antrean memang diperlukan.
+`checkLocalDbStatus` sekarang menggunakan `getLocalStoreCount` (IndexedDB `count()`) untuk jumlah data tiap store. Isi data tidak lagi dibaca hanya untuk menghitung jumlah record.
 
 ### 5. Idempotensi transaksi perlu diverifikasi di sisi Google Apps Script
 
@@ -69,3 +67,16 @@ Klien mengirim `clientTransactionId` dan memiliki proses audit pra-sinkronisasi.
 - Tidak ada perubahan pada URL GAS atau konfigurasi produksi.
 - Belum dilakukan pengujian runtime di browser/Android maupun uji integrasi terhadap GAS.
 - Sebelum merge, perlu pengujian: transaksi penjualan offline, retur/tukar offline, reconnect, refresh katalog per cabang, sinkronisasi ulang setelah timeout, restore backup, dan kegagalan jaringan saat sinkronisasi master.
+
+## Tahap 1 — pengamanan retry sinkronisasi
+
+Perbaikan tambahan pada `syncPendingTransactions`:
+- Antrean dengan `retryCount > 0` terlebih dahulu diperiksa melalui endpoint GAS `auditSinkronisasi` menggunakan `clientTransactionId`.
+- Jika server mengembalikan nomor nota untuk ID tersebut, antrean lokal ditandai selesai/dihapus dan riwayat penjualan lokal diperbarui; transaksi tidak dikirim ulang.
+- Jika audit server gagal atau respons tidak memiliki `syncedMap` yang valid, antrean retry lama ditahan dan tidak dikirim ulang. Antrean baru dengan `retryCount = 0` tetap dapat diproses.
+- Hasil deduplikasi dan retry yang ditahan dicatat pada audit log lokal.
+
+Batasan yang masih harus diuji:
+- Perilaku endpoint GAS `auditSinkronisasi` harus diuji pada data nyata, termasuk untuk transaksi Retur/Tukar.
+- Pencegahan duplikasi lintas perangkat tetap memerlukan pemeriksaan implementasi server GAS dan pengujian saat dua perangkat mengirim ID yang sama.
+- Belum ada pengujian runtime browser/Android pada perubahan ini; perubahan baru lolos pemeriksaan struktur kode dan verifikasi isi branch.
