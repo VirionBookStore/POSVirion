@@ -5992,10 +5992,87 @@ function prosesCheckoutReturFinal() {
         await new Promise(function(resolve, reject) {
           initIndexedDB(function(ok){ ok ? resolve() : reject(new Error('Database lokal tidak dapat dibuka.')); });
         });
+
         const list = await getAllFromStore('pendingTransactions');
         list.sort(function(a,b){ return String(a.createdAt).localeCompare(String(b.createdAt)); });
-        for (const item of list) {
+
+        // RETRY GUARD:
+        // Jika pengiriman sebelumnya gagal/timeout, server mungkin sebenarnya sudah
+        // menyimpan transaksi. Periksa clientTransactionId di server sebelum mengirim ulang.
+        // Jika audit server gagal/tidak valid, retry lama DITAHAN agar tidak berisiko duplikat.
+        const retryList = list.filter(function(item) {
+          return Number(item.retryCount || 0) > 0 && item.clientTransactionId;
+        });
+
+        if (retryList.length && asposIsOnline()) {
+          try {
+            const branchId = currentUser ? String(currentUser.id_cabang || '') : '';
+            const auditRes = await asposCallGasLocalFirst('auditSinkronisasi', [{
+              clientIds: retryList.map(function(item){ return item.clientTransactionId; }),
+              id_cabang: branchId
+            }]);
+
+            if (!auditRes || !auditRes.syncedMap || typeof auditRes.syncedMap !== 'object') {
+              throw new Error('Respons audit server tidak valid; transaksi retry ditahan demi mencegah duplikasi.');
+            }
+
+            const syncedMap = auditRes.syncedMap;
+            for (const item of retryList) {
+              const match = syncedMap[item.clientTransactionId];
+              const serverNota = match && (match.no_nota || match.id_transaksi);
+              if (!serverNota) continue;
+
+              // Transaksi telah ada di server: jangan kirim ulang.
+              await deleteStoreItem('pendingTransactions', item.clientTransactionId);
+              if (item.txType !== 'RETUR_TUKAR') {
+                const history = await getStoreItem('riwayatPenjualan', item.no_nota);
+                if (history) {
+                  history.no_nota = serverNota;
+                  history.sync_status = 'SYNCED';
+                  history.server_no_nota = serverNota;
+                  await deleteStoreItem('riwayatPenjualan', item.no_nota);
+                  await putStore('riwayatPenjualan', history);
+                }
+              }
+              await asposWriteAuditLog('AUDIT_DEDUP_AUTO',
+                'Retry dibatalkan karena transaksi sudah tercatat di server.', {
+                  clientTransactionId: item.clientTransactionId,
+                  localNota: item.no_nota,
+                  serverNota: serverNota,
+                  txType: item.txType || 'PENJUALAN'
+                });
+            }
+          } catch(auditErr) {
+            console.warn('[AS-Pos] Audit retry gagal; antrean retry lama tidak dikirim ulang:', auditErr);
+            await asposWriteAuditLog('AUDIT_RETRY_BLOCKED',
+              'Retry ditahan karena status transaksi di server belum dapat dipastikan.', {
+                retryCount: retryList.length,
+                error: String(auditErr && auditErr.message ? auditErr.message : auditErr)
+              });
+          }
+        }
+
+        // Ambil ulang antrean setelah proses deduplikasi. Retry lama hanya boleh dikirim
+        // jika audit server berhasil; retry baru (retryCount=0) tetap dapat diproses normal.
+        const currentList = await getAllFromStore('pendingTransactions');
+        const retryIds = new Set(retryList.map(function(item){ return item.clientTransactionId; }));
+        const auditWasRequired = retryList.length > 0;
+        let retryAuditAllowed = !auditWasRequired;
+        if (auditWasRequired) {
+          // Audit yang gagal dicatat lewat log AUDIT_RETRY_BLOCKED.
+          const recentLogs = JSON.parse(localStorage.getItem(ASPOS_AUDIT_KEY) || '[]');
+          const blocked = recentLogs.some(function(log) {
+            return log && log.type === 'AUDIT_RETRY_BLOCKED' &&
+              Date.now() - (new Date(log.time).getTime() || 0) < 60000;
+          });
+          retryAuditAllowed = !blocked;
+        }
+
+        for (const item of currentList) {
           if (!asposIsOnline()) break;
+          const isOldRetry = retryIds.has(item.clientTransactionId) &&
+            Number(item.retryCount || 0) > 0;
+          if (isOldRetry && !retryAuditAllowed) continue;
           await syncOnePendingTransaction(item);
         }
       } catch(err) {
