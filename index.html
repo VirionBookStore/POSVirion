@@ -2261,9 +2261,20 @@ async function loadDashboardByDate() {
   if (btn) { btn.disabled = false; btn.innerText = hasDashboardCache ? 'Menyegarkan...' : 'Memuat...'; }
   if (!hasDashboardCache && tbody) tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty">Memuat data...</td></tr>';
 
+  // Watchdog agar dashboard tidak selamanya berhenti pada "Memuat data..."
+  var dashboardTimedOut = false;
+  var dashboardTimer = setTimeout(function() {
+    dashboardTimedOut = true;
+    if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
+    if (!hasDashboardCache && tbody) {
+      tbody.innerHTML = '<tr><td colspan="6" class="dashboard-empty" style="color:#dc3545;">Permintaan dashboard tidak mendapat jawaban dalam 45 detik. Periksa koneksi atau layanan GAS, lalu klik Tampilkan kembali.</td></tr>';
+    }
+  }, 45000);
+
   // 3. TARIK DATA TERBARU DI LATAR BELAKANG
   google.script.run
     .withSuccessHandler(async function(data) {
+      if (dashboardTimedOut) return;
       try {
         var reportRows = await asposCallGasLocalFirst('getLaporanPenjualanBarangAdvanced', [
           startStr, endStr, 'transaksi', branchId
@@ -2337,6 +2348,8 @@ async function loadDashboardByDate() {
         console.warn('[AS-Pos] Rincian retur Dashboard tidak dapat dilengkapi:', err);
       }
 
+      if (dashboardTimedOut) return;
+      clearTimeout(dashboardTimer);
       window.asposMemoryCache.dashboard[dashboardCacheKey] = data;
       renderDashboardUI(data, startStr, endStr);
       try { localStorage.setItem(dashboardCacheKey, JSON.stringify({ savedAt: Date.now(), data: data })); }
@@ -2344,6 +2357,8 @@ async function loadDashboardByDate() {
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
     })
     .withFailureHandler(function(err) {
+      clearTimeout(dashboardTimer);
+      if (dashboardTimedOut) return;
       console.warn('[AS-Pos] Gagal menyegarkan dashboard:', err);
       if (btn) { btn.disabled = false; btn.innerText = 'Tampilkan'; }
       // Pertahankan data cache jika sudah tampil; hanya tampilkan pesan gagal jika layar memang masih kosong
